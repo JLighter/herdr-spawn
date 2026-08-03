@@ -93,7 +93,7 @@ guess_type() {
   lower=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
   case "$lower" in
     fix*|corrige*|répare*|repare*|debug*|*" bug"*|*crash*|*erreur*|*error*|*broken*|*"ne marche pas"*|*"doesn't work"*) printf 'fix' ;;
-    doc*|documente*|*readme*) printf 'docs' ;;
+    doc*|*readme*) printf 'docs' ;;
     test*|*"add tests"*|*"ajoute des tests"*|*"écris des tests"*) printf 'test' ;;
     refactor*|réorganise*|reorganise*|nettoie*|renomme*|rename*|*cleanup*|*"clean up"*) printf 'refactor' ;;
     chore*|bump*|upgrade*|*"mets à jour"*|*"met à jour"*|*"update dep"*) printf 'chore' ;;
