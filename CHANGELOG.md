@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 — 2026-08-03
+
+- Fix `shift+enter` in the popup: bind herdr's default modifyOtherKeys
+  encoding (`CSI 27;2;13~`) alongside the kitty form — readline was
+  inserting the tail of the unknown sequence into the line.
+- Fix GNU mktemp portability (Ubuntu CI).
+
 ## 0.2.0 — 2026-08-03
 
 - **Transactional launch**: if the launch fails before the agent has
