@@ -70,6 +70,29 @@ setup() {
   [ "$output" = "agent/new-task" ]
 }
 
+# ── smart_slug ────────────────────────────────────────────────────────
+
+@test "smart_slug: slugifies whatever slug_command answers" {
+  slug_command='printf "My Fancy Name!"'
+  slug_wait=3
+  run smart_slug "whatever task"
+  [ "$status" -eq 0 ]
+  [ "$output" = "my-fancy-name" ]
+}
+
+@test "smart_slug: a hung slug_command times out to an empty slug" {
+  slug_command='sleep 10'
+  slug_wait=1
+  run smart_slug "whatever task"
+  [ -z "$output" ]
+}
+
+@test "smart_slug: unset slug_command fails fast" {
+  slug_command=""
+  run smart_slug "whatever task"
+  [ "$status" -ne 0 ]
+}
+
 @test "unique_branch: -2 then -3 suffix on collision" {
   cd "$(mktemp -d)" && git init -q \
     && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init

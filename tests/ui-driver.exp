@@ -1,6 +1,6 @@
 #!/usr/bin/expect -f
 # Drives ui.sh in a pty (SPAWN_UI_DRY_RUN=1 — nothing is launched).
-# Usage: ui-driver.exp <shift-enter-is-enter|esc-empty|esc-keeps-text|edit-branch>
+# Usage: ui-driver.exp <live-slug|shift-enter-is-enter|esc-empty|esc-keeps-text|edit-branch|manual-branch-sticks>
 
 set timeout 8
 set scenario [lindex $argv 0]
@@ -9,6 +9,15 @@ set uidir [file dirname [file normalize [info script]]]
 spawn bash [file join $uidir .. ui.sh]
 
 switch $scenario {
+  "live-slug" {
+    # The branch line refreshes while typing, before any enter.
+    expect "prompt ❯"
+    send "fix login"
+    expect {
+      "agent/fix-login" { exit 0 }
+      timeout { puts "FAIL: branch slug not updated live"; exit 1 }
+    }
+  }
   "shift-enter-is-enter" {
     # herdr encodes shift+enter as CSI 27;2;13~ (modifyOtherKeys, its
     # default) or CSI 13;2u (kitty). Both must submit like a plain enter
@@ -16,16 +25,18 @@ switch $scenario {
     expect "prompt ❯"
     send "hello"
     send "\x1b\[27;2;13~"
-    expect "branch ❯"
-    send "\r"
     expect {
-      "DRY_RUN_PROMPT<hello>" { exit 0 }
+      "DRY_RUN_PROMPT<hello>" {}
       timeout { puts "FAIL: shift+enter did not submit cleanly"; exit 1 }
+    }
+    expect {
+      "DRY_RUN_BRANCH<agent/hello>" { exit 0 }
+      timeout { puts "FAIL: branch not derived"; exit 1 }
     }
   }
   "esc-empty" {
     expect "prompt ❯"
-    send "\x1b\[27u"
+    send "\x1b"
     expect {
       "DRY_RUN_PROMPT" { puts "FAIL: launched instead of closing"; exit 1 }
       eof {}
@@ -36,27 +47,53 @@ switch $scenario {
   "esc-keeps-text" {
     expect "prompt ❯"
     send "abc"
-    send "\x1b\[27u"
-    # The line is handed back untouched; accept it this time.
-    expect "prompt ❯"
-    send "\r"
-    expect "branch ❯"
+    send "\x1b"
+    # esc with text must not close; enter then launches.
+    sleep 0.3
     send "\r"
     expect {
       "DRY_RUN_PROMPT<abc>" { exit 0 }
       timeout { puts "FAIL: text lost after esc"; exit 1 }
+      eof { puts "FAIL: closed despite text"; exit 1 }
     }
   }
   "edit-branch" {
     expect "prompt ❯"
-    send "fix login\r"
-    expect "branch ❯"
-    # Wipe the prefilled name and type a custom one.
+    send "fix login"
+    expect "agent/fix-login"
+    send "\t"
     send "\x15"
     send "agent/custom-name\r"
     expect {
       "DRY_RUN_BRANCH<agent/custom-name>" { exit 0 }
       timeout { puts "FAIL: branch not editable"; exit 1 }
+    }
+  }
+  "llm-slug" {
+    # With slug_command configured, the basic slug shows first and the
+    # LLM name replaces it after the typing pause (async job).
+    expect "prompt ❯"
+    send "fix login"
+    expect "agent/fix-login"
+    expect {
+      "agent/llm-made-name" { exit 0 }
+      timeout { puts "FAIL: LLM slug never landed"; exit 1 }
+    }
+  }
+  "manual-branch-sticks" {
+    # Once edited by hand, the branch stops following the prompt.
+    expect "prompt ❯"
+    send "fix login"
+    expect "agent/fix-login"
+    send "\t"
+    send "\x15"
+    send "agent/mine"
+    send "\t"
+    send " quickly\r"
+    expect {
+      "DRY_RUN_BRANCH<agent/mine>" { exit 0 }
+      "DRY_RUN_BRANCH<agent/fix-login-quickly>" { puts "FAIL: manual branch overwritten"; exit 1 }
+      timeout { puts "FAIL: no dry-run output"; exit 1 }
     }
   }
   default {

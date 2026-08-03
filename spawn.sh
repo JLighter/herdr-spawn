@@ -104,7 +104,9 @@ else
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
     || { echo "spawn: not inside a git repository — use --here to stay in the workspace" >&2; exit 1; }
   if [ -z "$branch" ]; then
-    slug=$(slugify "$prompt")
+    # slug_command (LLM) first when configured, basic slug otherwise.
+    slug=$(smart_slug "$prompt" || true)
+    [ -n "$slug" ] || slug=$(slugify "$prompt")
     branch=$(unique_branch "${branch_prefix}${slug:-task}")
   fi
   base_args=()

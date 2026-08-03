@@ -21,3 +21,22 @@ base=
 
 # Number of prompts kept in history (↑ in the popup).
 history_size=200
+
+# Optional: generate branch slugs with a (local) LLM. The command gets a
+# ready-made instruction + the task prompt on stdin and must print the
+# name on stdout; the output is slugified again for safety. In the popup
+# it runs in the background while you type (the basic slug shows until
+# it answers); the CLI waits up to slug_wait seconds. Empty = basic slug.
+# Quote values containing spaces (this file is sourced by bash). Examples:
+#   slug_command='ollama run gemma3:4b'
+#   slug_command='lms chat --model your-model'
+#   slug_command='claude -p --model haiku'
+slug_command=
+
+# Seconds to wait for slug_command at launch/CLI time (0 = never wait).
+slug_wait=3
+
+# Optional fire-and-forget command run when the popup opens — use it to
+# preload a local model so slug_command answers fast. Example (ollama):
+#   slug_warmup='curl -s http://localhost:11434/api/generate -d "{\"model\":\"gemma3:4b\",\"keep_alive\":\"30m\"}"'
+slug_warmup=

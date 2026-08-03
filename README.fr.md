@@ -45,10 +45,13 @@ CLI optionnelle : lier `spawn.sh` dans le PATH, p. ex.
 **Popup** (`prefix+enter`) — affiche le projet et la branche du pane
 actif, lit le prompt, puis lance l'agent sans voler le focus :
 
-- `entrée` lance, ligne vide ou `esc` ferme, `ctrl+c`/`ctrl+d` annulent
+- la **ligne branche se met à jour en direct** pendant la frappe du prompt
+- `tab` saute sur la ligne branche pour éditer le nom soi-même (elle
+  cesse de suivre le prompt dès qu'on y touche ; la vider la rend au
+  générateur)
+- `entrée` lance (depuis l'un ou l'autre champ), prompt vide ou `esc`
+  ferme, `ctrl+c`/`ctrl+d` annulent
 - `↑` parcourt l'historique persistant des prompts, `:h` y pioche avec fzf
-- le nom de branche généré est pré-rempli et **éditable** avant le
-  lancement ; vide = défaut régénéré
 - hors dépôt git, l'agent s'ouvre en split `--here` au lieu d'un worktree
 
 **CLI** :
@@ -65,6 +68,21 @@ worktrees d'agents du dépôt avec leur état (`[merged]`, `[empty]`,
 `[changes]`, `[+N commits]`, `[agent working]`…), sélection multiple
 fzf, confirmation, puis retrait worktree + branche. `--list` affiche
 l'état seulement.
+
+## Noms de branches par LLM (optionnel)
+
+`slug_command` dans la config fait nommer les branches par un LLM
+(local) : la commande reçoit une instruction prête + le prompt de la
+tâche sur stdin et imprime un nom sur stdout (re-slugifié par sécurité).
+Dans le popup elle tourne en arrière-plan après une courte pause de
+frappe — le slug basique s'affiche en attendant ; au lancement le popup
+attend jusqu'à `slug_wait` secondes. `slug_warmup` précharge le modèle à
+l'ouverture du popup.
+
+```sh
+slug_command='ollama run gemma3:4b'
+slug_warmup='curl -s http://localhost:11434/api/generate -d "{\"model\":\"gemma3:4b\",\"keep_alive\":\"30m\"}"'
+```
 
 ## Configuration
 

@@ -2,12 +2,20 @@
 #
 # herdr-spawn — popup interface (entrypoint "launcher").
 #
-# Shows the context (project, branch, agent), reads the prompt with
-# history (↑/↓), then delegates to spawn.sh.
-#   :h          — pick a past prompt with fzf
-#   esc         — close the popup when the line is empty; with text, the
-#                 line is kept as-is
-# Empty line, ctrl+c or ctrl+d: cancel. On error the popup stays open.
+# Two-field editor: the prompt line and the branch line are shown
+# together, and the branch slug is recomputed live while you type.
+#   enter — launch (from either field)
+#   tab   — jump to the branch line and edit the name yourself (it stops
+#           auto-updating once you type in it; empty = auto again)
+#   esc   — close when the prompt is empty; from the branch line, jump
+#           back to the prompt
+#   ↑/↓   — walk the persistent prompt history
+#   :h    — as the whole prompt + enter: pick a past prompt with fzf
+# ctrl+c / ctrl+d cancel. On error the popup stays open.
+#
+# No readline here: keys are read raw so the branch line can refresh on
+# every keystroke, and herdr's encodings (shift+enter as CSI 27;2;13~ or
+# CSI 13;2u, esc as CSI 27u) are handled explicitly.
 
 set -euo pipefail
 
@@ -16,53 +24,32 @@ root="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 . "$root/lib.sh"
 load_config
 
-# Base ANSI colors: they follow the terminal theme instead of forcing one.
 bold=$'\e[1m' dim=$'\e[2m' reset=$'\e[0m'
 accent=$'\e[36m' green=$'\e[32m' red=$'\e[31m'
+
+# Raw mode for the whole input session. Toggling per-read (what plain
+# `read -n1` does) bounces the tty between canonical and raw mode, and
+# characters arriving in a canonical window get eaten or surface as
+# phantom empty reads (observed on macOS with a bare esc). -echo also
+# stops the kernel from echoing keystrokes over our own rendering.
+stty_saved=$(stty -g 2>/dev/null || true)
+restore_tty() { [ -n "$stty_saved" ] && stty "$stty_saved" 2>/dev/null || true; }
+cleanup_ui() {
+  restore_tty
+  type stop_slug_job >/dev/null 2>&1 && stop_slug_job
+}
+trap cleanup_ui EXIT
+trap 'exit 0' INT
+stty -echo -icanon min 1 time 0 2>/dev/null || true
 
 fail_hold() {
   printf '\n%s(press enter to close)%s ' "$dim" "$reset"
   read -r _ || true
 }
 
-# ── Keyboard setup ────────────────────────────────────────────────────
-# Kitty keyboard protocol (disambiguate flag): makes shift+enter and esc
-# reportable as distinct sequences. Terminals without it ignore the
-# escape codes and shift+enter degrades to a plain enter.
-kitty_push() { printf '\e[>1u'; }
-kitty_pop() { printf '\e[<u'; }
-
-# readline macros, loaded via a dedicated INPUTRC (user's inputrc is
-# included first so their settings survive):
-#   shift+enter → behaves like a plain enter. herdr encodes it as
-#                 CSI 27;2;13~ (xterm modifyOtherKeys, its default) or
-#                 CSI 13;2u (kitty) — without these binds readline would
-#                 leak the tail of the unknown sequence into the line.
-#   esc (CSI 27u / 27;1u, or a bare \e) → prefix the line with a \x01
-#                 marker and accept it; the loop below decides: empty
-#                 line → close, text → hand the line back untouched
-ESC_MARK=$'\x01'
-# BSD and GNU mktemp disagree on -t; the explicit template works on both.
-inputrc_tmp=$(mktemp "${TMPDIR:-/tmp}/herdr-spawn-inputrc.XXXXXX")
-{
-  user_inputrc="${INPUTRC:-$HOME/.inputrc}"
-  # shellcheck disable=SC2016  # $include is inputrc syntax, not shell
-  [ -f "$user_inputrc" ] && printf '$include %s\n' "$user_inputrc"
-  printf '"\\e[27;2;13~": accept-line\n'
-  printf '"\\e[13;2u": accept-line\n'
-  printf '"\\e[27u": "\\C-a\\C-v\\C-a\\n"\n'
-  printf '"\\e[27;1u": "\\C-a\\C-v\\C-a\\n"\n'
-  printf '"\\e": "\\C-a\\C-v\\C-a\\n"\n'
-  printf 'set keyseq-timeout 200\n'
-} > "$inputrc_tmp"
-export INPUTRC="$inputrc_tmp"
-
-cleanup_keyboard() {
-  kitty_pop
-  rm -f "$inputrc_tmp"
-}
-trap cleanup_keyboard EXIT
-kitty_push
+# Preload the slug model (fire-and-forget) so slug_command answers fast
+# by the time a job actually runs.
+[ -n "$slug_warmup" ] && ( bash -c "$slug_warmup" >/dev/null 2>&1 & )
 
 # ── Context: project of the pane that was active when the popup opened ──
 ctx_cwd=$(context_cwd || true)
@@ -74,89 +61,361 @@ ws_label=""
 [ -n "${HERDR_PLUGIN_CONTEXT_JSON:-}" ] \
   && ws_label=$(jq -r '.workspace_label // empty' <<<"$HERDR_PLUGIN_CONTEXT_JSON" 2>/dev/null || true)
 
-printf '\n  %s⚡ spawn%s %s· agent %s%s%s\n' "$bold" "$reset" "$dim" "$reset$accent" "$kind" "$reset"
-printf '  %s──────────────────────────────────────────%s\n' "$dim" "$reset"
-if [ -n "$repo_root" ]; then
-  printf '  %sproject%s  %s%s%s%s\n' "$dim" "$reset" "$bold" "$(basename "$repo_root")" "$reset" \
-    "${ws_label:+ $dim(workspace $ws_label)$reset}"
-  printf '  %sbranch%s   %s → %s<prompt slug>%s\n' "$dim" "$reset" "${git_branch:-?}" "$dim$branch_prefix" "$reset"
-else
-  printf '  %sproject%s  %sno git repository — the agent will open as a --here split%s\n' "$dim" "$reset" "$red" "$reset"
-fi
-printf '  %senter: launch · esc: close · ↑ history · :h fzf%s\n\n' "$dim" "$reset"
-
-# Persistent prompt history (plugin state dir).
+# ── Prompt history ────────────────────────────────────────────────────
 state=$(plugin_state_dir)
 mkdir -p "$state"
 histfile="$state/history"
-[ -f "$histfile" ] && history -r "$histfile"
+hist=()
+[ -f "$histfile" ] && mapfile -t hist < "$histfile"
+hist_idx=${#hist[@]}
+hist_stash=""
 
-# Input loop: esc and :h prepare the line and hand control back.
-prompt=""
-initial=""
-while :; do
-  IFS= read -r -e -i "$initial" -p "  prompt ❯ " entry || exit 0
-  initial=""
-  case "$entry" in
-    "") exit 0 ;;
-    "$ESC_MARK") exit 0 ;;
-    "$ESC_MARK"*)
-      # esc pressed with text on the line: hand it back untouched.
-      initial="${entry#"$ESC_MARK"}"
-      continue
-      ;;
-    ":h")
-      if ! command -v fzf >/dev/null 2>&1; then
-        printf '  %sfzf not found — ↑ walks the history%s\n' "$red" "$reset"
+# ── Editor state ──────────────────────────────────────────────────────
+prompt_text=""
+branch_text=""
+branch_auto=1
+focus="prompt"      # prompt | branch
+cur_p=0             # cursor offset in the prompt field
+cur_b=0             # cursor offset in the branch field
+cursor_line=0       # which line the physical cursor sits on (0/1)
+
+default_branch() {
+  local slug
+  slug=$(slugify "$prompt_text")
+  unique_branch "${branch_prefix}${slug:-task}"
+}
+
+refresh_branch() {
+  [ "$branch_auto" -eq 1 ] || return 0
+  if [ -n "$repo_root" ] && [ -n "$prompt_text" ]; then
+    branch_text=$(default_branch)
+  else
+    branch_text=""
+  fi
+  cur_b=${#branch_text}
+}
+
+# ── Optional LLM slug job (slug_command): runs in the background after
+# a short typing pause; the basic slug shows until it answers. ──────────
+slug_job_pid=""
+slug_job_file=""
+slug_job_prompt=""
+
+stop_slug_job() {
+  [ -n "$slug_job_pid" ] && kill "$slug_job_pid" 2>/dev/null
+  wait "$slug_job_pid" 2>/dev/null || true
+  [ -n "$slug_job_file" ] && rm -f "$slug_job_file"
+  slug_job_pid="" slug_job_file=""
+}
+
+start_slug_job() {
+  [ -n "$slug_command" ] || return 0
+  [ "$branch_auto" -eq 1 ] && [ -n "$repo_root" ] && [ -n "$prompt_text" ] || return 0
+  [ "$prompt_text" = "$slug_job_prompt" ] && return 0
+  stop_slug_job
+  slug_job_prompt="$prompt_text"
+  slug_job_file=$(mktemp "${TMPDIR:-/tmp}/herdr-spawn-slug.XXXXXX")
+  ( slug_instruction "$prompt_text" | bash -c "$slug_command" > "$slug_job_file" 2>/dev/null ) &
+  slug_job_pid=$!
+}
+
+# Collect a finished job. Returns 0 when the branch line changed.
+poll_slug_job() {
+  [ -n "$slug_job_pid" ] || return 1
+  kill -0 "$slug_job_pid" 2>/dev/null && return 1
+  local out slug
+  out=$(awk 'NF {line=$0} END {print line}' "$slug_job_file" 2>/dev/null)
+  rm -f "$slug_job_file"
+  slug_job_pid="" slug_job_file=""
+  [ "$branch_auto" -eq 1 ] || return 1
+  [ "$slug_job_prompt" = "$prompt_text" ] || return 1
+  slug=$(slugify "$out")
+  [ -n "$slug" ] || return 1
+  branch_text=$(unique_branch "${branch_prefix}${slug}")
+  cur_b=${#branch_text}
+  return 0
+}
+
+# ── Rendering ─────────────────────────────────────────────────────────
+draw_header() {
+  printf '\n  %s⚡ spawn%s %s· agent %s%s%s\n' "$bold" "$reset" "$dim" "$reset$accent" "$kind" "$reset"
+  printf '  %s──────────────────────────────────────────%s\n' "$dim" "$reset"
+  if [ -n "$repo_root" ]; then
+    printf '  %sproject%s  %s%s%s%s%s\n' "$dim" "$reset" "$bold" "$(basename "$repo_root")" "$reset" \
+      "${ws_label:+ ${dim}(workspace $ws_label)$reset}" "${git_branch:+ ${dim}· base $git_branch$reset}"
+  else
+    printf '  %sproject%s  %sno git repository — the agent will open as a --here split%s\n' "$dim" "$reset" "$red" "$reset"
+  fi
+  printf '  %senter: launch · tab: edit branch · esc: close · ↑ history · :h fzf%s\n\n' "$dim" "$reset"
+}
+
+# One field line: label, text windowed around the cursor, and the
+# terminal column where the cursor belongs.
+FIELD_COL=11  # columns before the text: "  <label> ❯ "
+render_field() { # $1=label $2=text $3=cursor $4=style
+  local text="$2" cur="$3" avail start visible
+  avail=$(( ${COLUMNS:-$(tput cols 2>/dev/null || echo 80)} - FIELD_COL - 2 ))
+  start=0
+  [ "$cur" -ge "$avail" ] && start=$((cur - avail + 1))
+  visible="${text:start:avail}"
+  printf '\r\e[K  %s%s ❯%s %s%s%s' "$dim" "$1" "$reset" "$4" "$visible" "$reset"
+  RENDER_CURSOR_COL=$((FIELD_COL + cur - start))
+}
+
+draw_fields() {
+  local branch_style="$dim" branch_shown="$branch_text" col
+  [ "$focus" = "branch" ] && branch_style="$reset"
+  if [ -z "$repo_root" ]; then
+    branch_shown="(--here split, no worktree)"
+  elif [ -n "$slug_job_pid" ] && [ "$branch_auto" -eq 1 ]; then
+    branch_shown="$branch_text ⋯"
+  fi
+  # Anchor on the prompt line, redraw both, then place the cursor.
+  [ "$cursor_line" -eq 1 ] && printf '\e[A'
+  render_field "prompt" "$prompt_text" "$cur_p" "$reset"
+  local col_p=$RENDER_CURSOR_COL
+  printf '\n'
+  render_field "branch" "$branch_shown" "$cur_b" "$branch_style"
+  local col_b=$RENDER_CURSOR_COL
+  if [ "$focus" = "prompt" ]; then
+    printf '\e[A\r'
+    [ "$col_p" -gt 0 ] && printf '\e[%dC' "$col_p"
+    cursor_line=0
+  else
+    printf '\r'
+    [ "$col_b" -gt 0 ] && printf '\e[%dC' "$col_b"
+    cursor_line=1
+  fi
+}
+
+# ── Key reading: assemble escape sequences ────────────────────────────
+KEY=""
+PENDING_KEY=""
+read_key() {
+  local ch seq rc
+  if [ -n "$PENDING_KEY" ]; then
+    KEY="$PENDING_KEY"
+    PENDING_KEY=""
+    return 0
+  fi
+  # Timed first read so the loop gets periodic ticks (slug job polling).
+  IFS= read -rsn1 -t 0.25 ch
+  rc=$?
+  if [ "$rc" -gt 128 ]; then
+    KEY="TICK"
+    return 0
+  fi
+  [ "$rc" -eq 0 ] || return 1
+  # read -n1 strips its newline delimiter: an empty read IS an enter.
+  if [ -z "$ch" ]; then
+    KEY=$'\n'
+    return 0
+  fi
+  if [ "$ch" != $'\e' ]; then
+    KEY="$ch"
+    return 0
+  fi
+  if ! IFS= read -rsn1 -t 0.05 ch; then
+    KEY="ESC"
+    return 0
+  fi
+  if [ "$ch" = '[' ] || [ "$ch" = 'O' ]; then
+    seq=""
+    while IFS= read -rsn1 -t 0.05 ch; do
+      seq+="$ch"
+      case "$ch" in [A-Za-z~]) break ;; esac
+    done
+    KEY="CSI:$seq"
+  else
+    # A key typed right behind a bare esc landed in the lookahead window
+    # (slow redraws widen it): treat it as esc + that key, not alt+key.
+    KEY="ESC"
+    [ -z "$ch" ] && ch=$'\n'
+    PENDING_KEY="$ch"
+  fi
+}
+
+field_insert() { # $1=char
+  if [ "$focus" = "prompt" ]; then
+    prompt_text="${prompt_text:0:cur_p}$1${prompt_text:cur_p}"
+    cur_p=$((cur_p + 1))
+    refresh_branch
+  elif [ -n "$repo_root" ]; then
+    branch_text="${branch_text:0:cur_b}$1${branch_text:cur_b}"
+    cur_b=$((cur_b + 1))
+    branch_auto=0
+  fi
+}
+
+field_backspace() {
+  if [ "$focus" = "prompt" ]; then
+    [ "$cur_p" -gt 0 ] || return 0
+    prompt_text="${prompt_text:0:cur_p-1}${prompt_text:cur_p}"
+    cur_p=$((cur_p - 1))
+    refresh_branch
+  else
+    [ "$cur_b" -gt 0 ] || return 0
+    branch_text="${branch_text:0:cur_b-1}${branch_text:cur_b}"
+    cur_b=$((cur_b - 1))
+    branch_auto=0
+  fi
+}
+
+field_kill_line() {
+  if [ "$focus" = "prompt" ]; then
+    prompt_text="" cur_p=0
+    refresh_branch
+  else
+    # Stays empty while editing; auto mode resumes when leaving the field.
+    branch_text="" cur_b=0
+    branch_auto=0
+  fi
+}
+
+# An emptied branch field hands the name back to the generator once the
+# focus leaves it (regenerating live would fight the user's typing).
+leave_branch_field() {
+  focus="prompt"
+  [ -n "$branch_text" ] || { branch_auto=1; refresh_branch; }
+}
+
+history_move() { # $1=-1|1
+  [ "$focus" = "prompt" ] || return 0
+  [ "${#hist[@]}" -gt 0 ] || return 0
+  local next=$((hist_idx + $1))
+  { [ "$next" -lt 0 ] || [ "$next" -gt "${#hist[@]}" ]; } && return 0
+  [ "$hist_idx" -eq "${#hist[@]}" ] && hist_stash="$prompt_text"
+  hist_idx=$next
+  if [ "$hist_idx" -eq "${#hist[@]}" ]; then
+    prompt_text="$hist_stash"
+  else
+    prompt_text="${hist[hist_idx]}"
+  fi
+  cur_p=${#prompt_text}
+  refresh_branch
+}
+
+pick_history_fzf() {
+  command -v fzf >/dev/null 2>&1 || return 0
+  [ -s "$histfile" ] || return 0
+  local pick
+  pick=$(fzf --tac --no-sort --height=100% \
+    --header='enter: reuse this prompt (editable before launch)' \
+    < "$histfile" || true)
+  clear
+  draw_header
+  [ -n "$pick" ] && { prompt_text="$pick"; cur_p=${#prompt_text}; }
+  refresh_branch
+  cursor_line=0
+  printf '\n'
+  printf '\e[A'
+}
+
+# ── Main loop ─────────────────────────────────────────────────────────
+draw_header
+printf '\n'      # reserve the branch line, anchor on the prompt line
+printf '\e[A'
+draw_fields
+
+# At launch time, give a running (or about-to-run) slug job a bounded
+# chance to land: the branch line keeps refreshing while we wait.
+await_slug_job() {
+  [ -n "$slug_command" ] && [ "$branch_auto" -eq 1 ] && [ -n "$repo_root" ] || return 0
+  [ "${slug_wait:-3}" -gt 0 ] 2>/dev/null || return 0
+  start_slug_job
+  local deadline=$(( ${slug_wait:-3} * 4 )) i=0
+  while [ -n "$slug_job_pid" ] && [ "$i" -lt "$deadline" ]; do
+    if poll_slug_job; then draw_fields; return 0; fi
+    sleep 0.25
+    i=$((i + 1))
+  done
+  poll_slug_job && draw_fields
+  stop_slug_job
+  return 0
+}
+
+idle_ticks=0
+while read_key; do
+  if [ "$KEY" = "TICK" ]; then
+    idle_ticks=$((idle_ticks + 1))
+    [ "$idle_ticks" -ge 2 ] && start_slug_job
+    poll_slug_job && draw_fields
+    continue
+  fi
+  idle_ticks=0
+  case "$KEY" in
+    $'\r'|$'\n'|"CSI:27;2;13~"|"CSI:13;2u")
+      if [ "$prompt_text" = ":h" ]; then
+        prompt_text="" cur_p=0
+        pick_history_fzf
+        draw_fields
         continue
       fi
-      [ -s "$histfile" ] || { printf '  %sempty history%s\n' "$dim" "$reset"; continue; }
-      initial=$(fzf --tac --no-sort --height=100% \
-        --header='enter: reuse this prompt (editable before launch)' \
-        < "$histfile" || true)
-      continue
+      [ -n "$prompt_text" ] || exit 0
+      await_slug_job
+      break
       ;;
-    *) prompt="$entry"; break ;;
+    "ESC"|"CSI:27u"|"CSI:27;1u")
+      if [ "$focus" = "branch" ]; then
+        leave_branch_field
+      elif [ -z "$prompt_text" ]; then
+        exit 0
+      fi
+      ;;
+    $'\t')
+      if [ -n "$repo_root" ]; then
+        if [ "$focus" = "prompt" ]; then focus="branch"; else leave_branch_field; fi
+      fi
+      ;;
+    $'\x7f'|$'\x08') field_backspace ;;
+    $'\x15') field_kill_line ;;
+    $'\x04') exit 0 ;;
+    $'\x01') if [ "$focus" = "prompt" ]; then cur_p=0; else cur_b=0; fi ;;
+    $'\x05') if [ "$focus" = "prompt" ]; then cur_p=${#prompt_text}; else cur_b=${#branch_text}; fi ;;
+    "CSI:A") history_move -1 ;;
+    "CSI:B") history_move 1 ;;
+    "CSI:D") if [ "$focus" = "prompt" ]; then [ "$cur_p" -gt 0 ] && cur_p=$((cur_p - 1)); else [ "$cur_b" -gt 0 ] && cur_b=$((cur_b - 1)); fi ;;
+    "CSI:C") if [ "$focus" = "prompt" ]; then [ "$cur_p" -lt "${#prompt_text}" ] && cur_p=$((cur_p + 1)); else [ "$cur_b" -lt "${#branch_text}" ] && cur_b=$((cur_b + 1)); fi ;;
+    "CSI:H"|"CSI:1~") if [ "$focus" = "prompt" ]; then cur_p=0; else cur_b=0; fi ;;
+    "CSI:F"|"CSI:4~") if [ "$focus" = "prompt" ]; then cur_p=${#prompt_text}; else cur_b=${#branch_text}; fi ;;
+    CSI:*|META:*) : ;;   # unknown sequences are swallowed, never inserted
+    *)
+      case "$KEY" in
+        [[:print:]]) field_insert "$KEY" ;;
+      esac
+      ;;
   esac
+  # Batch redraws: skip when more input is already queued (fast typing).
+  if ! IFS= read -rsn0 -t 0 2>/dev/null; then
+    draw_fields
+  fi
 done
-[ -n "$prompt" ] || exit 0
 
-history -s "$prompt"
-history -w "$histfile"
+# Move below the branch line before printing anything else.
+[ "$cursor_line" -eq 0 ] && printf '\e[B'
+printf '\n'
+
+[ -n "$prompt_text" ] || exit 0
+[ -n "$branch_text" ] || { [ -n "$repo_root" ] && branch_text=$(default_branch); }
+
+printf '%s\n' "$prompt_text" >> "$histfile"
 tail -n "${history_size:-200}" "$histfile" > "$histfile.tmp" && mv "$histfile.tmp" "$histfile"
-
-# Branch step (worktree mode only): the generated name, prefilled and
-# editable. Enter accepts, empty regenerates the default, esc goes back
-# to editing the branch line.
-branch=""
-if [ -n "$repo_root" ]; then
-  default_branch=$(unique_branch "${branch_prefix}$(slugify "$prompt")")
-  [ "${default_branch%/}" != "${branch_prefix%/}" ] || default_branch=$(unique_branch "${branch_prefix}task")
-  initial="$default_branch"
-  while :; do
-    IFS= read -r -e -i "$initial" -p "  branch ❯ " entry || exit 0
-    case "$entry" in
-      "") initial="$default_branch"; continue ;;
-      "$ESC_MARK") initial="$default_branch"; continue ;;
-      "$ESC_MARK"*) initial="${entry#"$ESC_MARK"}"; continue ;;
-      *) branch="$entry"; break ;;
-    esac
-  done
-fi
 
 # Test hook: print the resolved prompt and branch instead of launching.
 if [ "${SPAWN_UI_DRY_RUN:-0}" = "1" ]; then
-  printf 'DRY_RUN_PROMPT<%s>\n' "$prompt"
-  printf 'DRY_RUN_BRANCH<%s>\n' "$branch"
+  printf 'DRY_RUN_PROMPT<%s>\n' "$prompt_text"
+  printf 'DRY_RUN_BRANCH<%s>\n' "$branch_text"
   exit 0
 fi
 
 echo
 if [ -n "$repo_root" ]; then
-  out=$(bash "$root/spawn.sh" -b "$branch" "$prompt" 2>&1) || { printf '  %s✗%s %s\n' "$red" "$reset" "$out"; fail_hold; exit 1; }
+  out=$(bash "$root/spawn.sh" -b "$branch_text" "$prompt_text" 2>&1) \
+    || { printf '  %s✗%s %s\n' "$red" "$reset" "$out"; fail_hold; exit 1; }
 else
   # Outside a git repository a worktree is impossible: split instead.
-  out=$(bash "$root/spawn.sh" --here "$prompt" 2>&1) || { printf '  %s✗%s %s\n' "$red" "$reset" "$out"; fail_hold; exit 1; }
+  out=$(bash "$root/spawn.sh" --here "$prompt_text" 2>&1) \
+    || { printf '  %s✗%s %s\n' "$red" "$reset" "$out"; fail_hold; exit 1; }
 fi
 out="${out#spawn: }"
 notify "spawn" "$out"

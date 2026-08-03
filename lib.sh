@@ -27,6 +27,9 @@ load_config() {
   here_direction="right"
   base=""
   history_size=200
+  slug_command=""
+  slug_warmup=""
+  slug_wait=3
 
   local dir
   dir=$(plugin_config_dir) || return 0
@@ -96,4 +99,39 @@ unique_branch() {
 # herdr toast (best effort — silent when unavailable).
 notify() {
   "${HERDR_BIN_PATH:-herdr}" notification show "$1" --body "${2:-}" --sound none >/dev/null 2>&1 || true
+}
+
+# ── LLM-assisted branch slugs (optional, see slug_command in config) ──
+
+# The instruction piped into slug_command, with the task prompt inline.
+slug_instruction() {
+  printf 'Reply with only a short kebab-case git branch name (3-5 lowercase ascii words, no prefix, no quotes, no explanations) describing this coding task:\n\n%s\n' "$1"
+}
+
+# Portable timeout (macOS has no coreutils timeout): run "$@" and kill it
+# after $1 seconds.
+run_with_timeout() {
+  local secs=$1 pid watchdog rc
+  shift
+  "$@" &
+  pid=$!
+  ( sleep "$secs" && kill "$pid" 2>/dev/null ) &
+  watchdog=$!
+  wait "$pid" 2>/dev/null
+  rc=$?
+  kill "$watchdog" 2>/dev/null
+  wait "$watchdog" 2>/dev/null
+  return $rc
+}
+
+# Synchronous LLM slug: prompt in, slug out (empty on failure/timeout).
+# The reply's last non-empty line is slugified — reasoning models may
+# emit thinking noise first, and slugify sanitizes whatever comes back.
+smart_slug() {
+  [ -n "$slug_command" ] || return 1
+  local out
+  out=$(slug_instruction "$1" \
+    | run_with_timeout "${2:-$slug_wait}" bash -c "$slug_command" 2>/dev/null) || true
+  out=$(printf '%s\n' "$out" | awk 'NF {line=$0} END {print line}')
+  slugify "$out"
 }

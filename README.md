@@ -45,10 +45,12 @@ Optional CLI: link `spawn.sh` into your PATH, e.g.
 **Popup** (`prefix+enter`) — shows the active pane's project and branch,
 reads the prompt, then launches the agent without stealing focus:
 
-- `enter` launches, an empty line or `esc` closes, `ctrl+c`/`ctrl+d` cancel
+- the **branch line updates live** while you type the prompt
+- `tab` jumps to the branch line to edit the name yourself (it stops
+  auto-updating once you touch it; clear it to hand it back)
+- `enter` launches (from either field), an empty prompt or `esc` closes,
+  `ctrl+c`/`ctrl+d` cancel
 - `↑` walks the persistent prompt history, `:h` picks from it with fzf
-- the generated branch name is prefilled and **editable** before launch;
-  leave it empty to regenerate the default
 - outside a git repository the agent opens as a `--here` split instead
   of a worktree
 
@@ -67,12 +69,25 @@ repository's agent worktrees with their state (`[merged]`, `[empty]`,
 confirmation, then removes worktree + branch. `--list` prints the state
 only.
 
+## LLM branch names (optional)
+
+Set `slug_command` in the config to name branches with a (local) LLM:
+the command receives a ready-made instruction + the task prompt on stdin
+and prints a name on stdout (slugified again for safety). In the popup
+it runs in the background after a short typing pause — the basic slug
+shows until it answers; at launch the popup waits up to `slug_wait`
+seconds. `slug_warmup` preloads the model when the popup opens.
+
+```sh
+slug_command='ollama run gemma3:4b'
+slug_warmup='curl -s http://localhost:11434/api/generate -d "{\"model\":\"gemma3:4b\",\"keep_alive\":\"30m\"}"'
+```
+
 ## Configuration
 
 `herdr plugin config-dir herdr-spawn` prints the config directory; a
-commented `config` file is seeded there on first launch: `kind`
-(claude/opencode/…), `branch_prefix`, `focus`, `here_direction`, `base`,
-`history_size`. Popup dimensions live in `herdr-plugin.toml`
+commented `config` file is seeded there on first launch: `kind` (claude/opencode/…), `branch_prefix`, `focus`, `here_direction`,
+`base`, `history_size`, `slug_command`, `slug_warmup`, `slug_wait`. Popup dimensions live in `herdr-plugin.toml`
 (`[[panes]]`, `width`/`height`).
 
 Prompt history lives in the plugin state dir

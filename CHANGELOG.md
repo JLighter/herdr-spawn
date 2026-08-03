@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — 2026-08-03
+
+- **Live branch slug**: the popup is now a two-field editor — the branch
+  line refreshes on every keystroke, `tab` jumps to it for manual edits
+  (a touched name stops following the prompt; clearing it hands it back).
+- **LLM branch names** (optional): `slug_command` pipes the task through
+  a (local) model in the background while you type; `slug_warmup`
+  preloads the model when the popup opens, `slug_wait` bounds the wait
+  at launch. Falls back to the basic slug on timeout or failure.
+- Raw-mode keyboard handling (no readline): fixes eaten `esc` and
+  phantom reads from canonical-mode windows on macOS, and stops kernel
+  echo from bleeding into the rendering.
+
 ## 0.3.0 — 2026-08-03
 
 - **Multi-line input removed** (popup `shift+enter` and CLI `--edit`):

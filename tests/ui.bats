@@ -16,6 +16,11 @@ setup() {
   cd "$repo"
 }
 
+@test "ui: the branch slug refreshes live while typing" {
+  run expect "$BATS_TEST_DIRNAME/ui-driver.exp" live-slug
+  [ "$status" -eq 0 ]
+}
+
 @test "ui: shift+enter submits like a plain enter (herdr's encoding is swallowed)" {
   run expect "$BATS_TEST_DIRNAME/ui-driver.exp" shift-enter-is-enter
   [ "$status" -eq 0 ]
@@ -31,7 +36,18 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "ui: the branch name is editable before launch" {
+@test "ui: tab jumps to the branch line, which is editable" {
   run expect "$BATS_TEST_DIRNAME/ui-driver.exp" edit-branch
+  [ "$status" -eq 0 ]
+}
+
+@test "ui: a hand-edited branch stops following the prompt" {
+  run expect "$BATS_TEST_DIRNAME/ui-driver.exp" manual-branch-sticks
+  [ "$status" -eq 0 ]
+}
+
+@test "ui: slug_command replaces the basic slug asynchronously" {
+  printf "slug_command='printf llm-made-name'\n" > "$HERDR_PLUGIN_CONFIG_DIR/config"
+  run expect "$BATS_TEST_DIRNAME/ui-driver.exp" llm-slug
   [ "$status" -eq 0 ]
 }
