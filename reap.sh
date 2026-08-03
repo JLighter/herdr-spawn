@@ -50,16 +50,16 @@ while IFS=$'\t' read -r branch path ws_id; do
   if [ -n "$ws_id" ]; then
     status=$(jq -r --arg ws "$ws_id" \
       '[.result.agents[]? | select(.workspace_id == $ws) | .agent_status] | first // empty' <<<"$agents")
-    [ -n "$status" ] && tags="$tags[agent $status] "
+    [ -n "$status" ] && tags="${tags}[agent $status] "
   fi
   if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then
-    tags="$tags[changes] "
+    tags="${tags}[changes] "
   fi
   ahead=$(git rev-list --count "HEAD..$branch" 2>/dev/null || echo 0)
   if git merge-base --is-ancestor "$branch" HEAD 2>/dev/null; then
     [ -z "$tags" ] && tags="[merged] "
   elif [ "$ahead" -gt 0 ]; then
-    tags="$tags[+$ahead commits] "
+    tags="${tags}[+$ahead commits] "
   elif [ -z "$tags" ]; then
     tags="[empty] "
   fi

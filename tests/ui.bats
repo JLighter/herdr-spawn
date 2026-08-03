@@ -21,6 +21,11 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "ui: shift+enter also works in herdr's default modifyOtherKeys encoding" {
+  run expect "$BATS_TEST_DIRNAME/ui-driver.exp" multiline-modifyotherkeys
+  [ "$status" -eq 0 ]
+}
+
 @test "ui: esc on an empty line closes the popup without launching" {
   run expect "$BATS_TEST_DIRNAME/ui-driver.exp" esc-empty
   [ "$status" -eq 0 ]

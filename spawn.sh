@@ -147,7 +147,7 @@ agent_started=1
 submitted=0
 for _ in 1 2 3; do
   if out=$("$herdr" agent prompt "$pane" "$prompt" \
-    --wait --until working --until blocked --until done --timeout 15000 2>&1); then
+    --wait --until working --until blocked --until "done" --timeout 15000 2>&1); then
     submitted=1
     break
   fi

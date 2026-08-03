@@ -25,6 +25,19 @@ switch $scenario {
       timeout { puts "FAIL: default branch not derived"; exit 1 }
     }
   }
+  "multiline-modifyotherkeys" {
+    # herdr's default shift+enter encoding (xterm modifyOtherKeys).
+    expect "prompt ❯"
+    send "hello"
+    send "\x1b\[27;2;13~"
+    send "world\r"
+    expect "branch ❯"
+    send "\r"
+    expect {
+      -re {DRY_RUN_PROMPT<hello\r?\nworld>} { exit 0 }
+      timeout { puts "FAIL: modifyOtherKeys shift+enter not handled"; exit 1 }
+    }
+  }
   "esc-empty" {
     expect "prompt ❯"
     send "\x1b\[27u"

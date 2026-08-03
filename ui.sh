@@ -37,18 +37,21 @@ kitty_pop() { printf '\e[<u'; }
 
 # readline macros, loaded via a dedicated INPUTRC (user's inputrc is
 # included first so their settings survive):
-#   shift+enter (CSI 13;2u)  → insert the ⏎ marker, turned into a real
-#                              newline at submission
-#   esc (CSI 27u / 27;1u, or a bare \e without kitty) → prefix the line
-#                              with a \x01 marker and accept it; the loop
-#                              below decides: empty line → close, text →
-#                              hand the line back untouched
+#   shift+enter → insert the ⏎ marker, turned into a real newline at
+#                 submission. herdr encodes it as CSI 27;2;13~ (xterm
+#                 modifyOtherKeys, its default) or CSI 13;2u (kitty,
+#                 when the pane requested it) — bind both.
+#   esc (CSI 27u / 27;1u, or a bare \e) → prefix the line with a \x01
+#                 marker and accept it; the loop below decides: empty
+#                 line → close, text → hand the line back untouched
 ESC_MARK=$'\x01'
 NL_MARK='⏎'
 inputrc_tmp=$(mktemp -t herdr-spawn-inputrc)
 {
   user_inputrc="${INPUTRC:-$HOME/.inputrc}"
+  # shellcheck disable=SC2016  # $include is inputrc syntax, not shell
   [ -f "$user_inputrc" ] && printf '$include %s\n' "$user_inputrc"
+  printf '"\\e[27;2;13~": "%s"\n' "$NL_MARK"
   printf '"\\e[13;2u": "%s"\n' "$NL_MARK"
   printf '"\\e[27u": "\\C-a\\C-v\\C-a\\n"\n'
   printf '"\\e[27;1u": "\\C-a\\C-v\\C-a\\n"\n'

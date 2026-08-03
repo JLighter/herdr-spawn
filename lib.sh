@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # herdr-spawn — shared helpers (to be sourced).
 
 SPAWN_PLUGIN_ID="herdr-spawn"
@@ -18,6 +19,7 @@ plugin_state_dir() {
 # Load user config over the defaults. The file is seeded from
 # config.default on first load — it belongs to the user afterwards
 # (herdr never touches the contents of the config dir).
+# shellcheck disable=SC2034  # the variables are used by the sourcing scripts
 load_config() {
   kind="claude"
   branch_prefix="agent/"
