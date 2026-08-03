@@ -1,0 +1,24 @@
+id = "herdr-spawn"
+name = "Spawn"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Lancer un agent avec un prompt — worktree + workspace dédiés par défaut"
+platforms = ["linux", "macos"]
+
+# Le popup de lancement : demande le prompt, crée worktree + workspace,
+# démarre l'agent, soumet le prompt. Dimensions surchargées par la config
+# utilisateur (voir README) via l'action open.
+[[panes]]
+id = "launcher"
+title = "Lancer un agent"
+placement = "popup"
+width = "70%"
+height = 14
+command = ["bash", "ui.sh"]
+
+# Action bindable (prefix+enter) : ouvre le popup launcher.
+[[actions]]
+id = "open"
+title = "Ouvrir le lanceur d'agent"
+contexts = ["global"]
+command = ["bash", "open.sh"]
