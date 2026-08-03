@@ -6,8 +6,11 @@
 # Agent launched by default (supported kinds: `herdr agent start --help`).
 kind=claude
 
-# Prefix for the branches/worktrees created.
-branch_prefix=agent/
+# Conventional-commit types allowed in branch names (<type>/<slug>).
+branch_types='feat fix chore docs refactor test perf style ci build'
+
+# Type used when the prompt wording doesn't hint at one.
+branch_type_default=feat
 
 # Give focus to the agent pane after launch (true/false).
 # false: the sidebar and notifications track its state.

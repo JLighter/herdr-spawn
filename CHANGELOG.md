@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0 — 2026-08-03
+
+- **Conventional-commit branch names**: `<type>/<slug>` (feat, fix,
+  chore, docs, refactor, test, perf, style, ci, build). The type comes
+  from FR/EN keyword heuristics, or from the LLM when `slug_command` is
+  set (its reply is validated against `branch_types` and re-slugified).
+  Replaces the `branch_prefix` setting.
+- The reaper now identifies spawn worktrees through a branch registry in
+  the plugin state dir (written at launch, purged on removal) instead of
+  a name prefix.
+- Fix `run_with_timeout`: the watchdog inherited the caller's stdout and
+  stretched every fast LLM call to the full timeout.
+
 ## 0.4.0 — 2026-08-03
 
 - **Live branch slug**: the popup is now a two-field editor — the branch

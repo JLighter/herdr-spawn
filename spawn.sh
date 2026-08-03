@@ -12,15 +12,16 @@
 #
 #   -H, --here          no worktree: split in the current workspace
 #   -k, --kind <kind>   agent to launch (default: config, then claude)
-#   -b, --branch <name> branch/worktree name (default: <branch_prefix>
-#                       <prompt slug>, suffixed -2, -3… if already taken)
+#   -b, --branch <name> branch/worktree name (default: conventional
+#                       <type>/<prompt slug> — feat, fix, chore… — with
+#                       a -2, -3… suffix if already taken)
 #   -f, --focus         give focus to the agent pane
 #
 # If the launch fails before the agent has started, the created worktree
 # (or split) is removed: no orphaned resources. A started agent is never
 # destroyed, even when prompt submission fails.
 #
-# Defaults (kind, branch_prefix, focus, here_direction, base) come from
+# Defaults (kind, branch_types, focus, here_direction, base…) come from
 # the plugin config: `herdr plugin config-dir herdr-spawn`.
 #
 # Requires: herdr >= 0.7, jq. Worktree mode runs from a git repository;
@@ -104,10 +105,11 @@ else
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
     || { echo "spawn: not inside a git repository — use --here to stay in the workspace" >&2; exit 1; }
   if [ -z "$branch" ]; then
-    # slug_command (LLM) first when configured, basic slug otherwise.
-    slug=$(smart_slug "$prompt" || true)
-    [ -n "$slug" ] || slug=$(slugify "$prompt")
-    branch=$(unique_branch "${branch_prefix}${slug:-task}")
+    # Conventional name (type/slug): slug_command (LLM) picks the type
+    # and slug when configured, keyword heuristics otherwise.
+    branch=$(smart_branch "$prompt" || true)
+    [ -n "$branch" ] || branch=$(conventional_branch "$prompt")
+    branch=$(unique_branch "$branch")
   fi
   base_args=()
   [ -n "$base" ] && base_args=(--base "$base")
@@ -158,5 +160,9 @@ done
 if [ "$here" -eq 1 ]; then
   echo "spawn: $kind launched in the current workspace (pane $pane)"
 else
+  # Register the branch so `spawn done` can tell spawn worktrees apart.
+  state_dir=$(plugin_state_dir)
+  mkdir -p "$state_dir" 2>/dev/null || true
+  printf '%s\n' "$branch" >> "$state_dir/branches" 2>/dev/null || true
   echo "spawn: $kind launched on branch $branch (pane $pane)"
 fi

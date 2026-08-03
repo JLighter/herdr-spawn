@@ -33,7 +33,10 @@ accent=$'\e[36m' green=$'\e[32m' red=$'\e[31m'
 # phantom empty reads (observed on macOS with a bare esc). -echo also
 # stops the kernel from echoing keystrokes over our own rendering.
 stty_saved=$(stty -g 2>/dev/null || true)
-restore_tty() { [ -n "$stty_saved" ] && stty "$stty_saved" 2>/dev/null || true; }
+restore_tty() {
+  [ -n "$stty_saved" ] || return 0
+  stty "$stty_saved" 2>/dev/null || true
+}
 cleanup_ui() {
   restore_tty
   type stop_slug_job >/dev/null 2>&1 && stop_slug_job
@@ -80,9 +83,7 @@ cur_b=0             # cursor offset in the branch field
 cursor_line=0       # which line the physical cursor sits on (0/1)
 
 default_branch() {
-  local slug
-  slug=$(slugify "$prompt_text")
-  unique_branch "${branch_prefix}${slug:-task}"
+  unique_branch "$(conventional_branch "$prompt_text")"
 }
 
 refresh_branch() {
@@ -115,7 +116,7 @@ start_slug_job() {
   stop_slug_job
   slug_job_prompt="$prompt_text"
   slug_job_file=$(mktemp "${TMPDIR:-/tmp}/herdr-spawn-slug.XXXXXX")
-  ( slug_instruction "$prompt_text" | bash -c "$slug_command" > "$slug_job_file" 2>/dev/null ) &
+  ( branch_instruction "$prompt_text" | bash -c "$slug_command" > "$slug_job_file" 2>/dev/null ) &
   slug_job_pid=$!
 }
 
@@ -123,15 +124,14 @@ start_slug_job() {
 poll_slug_job() {
   [ -n "$slug_job_pid" ] || return 1
   kill -0 "$slug_job_pid" 2>/dev/null && return 1
-  local out slug
+  local out name
   out=$(awk 'NF {line=$0} END {print line}' "$slug_job_file" 2>/dev/null)
   rm -f "$slug_job_file"
   slug_job_pid="" slug_job_file=""
   [ "$branch_auto" -eq 1 ] || return 1
   [ "$slug_job_prompt" = "$prompt_text" ] || return 1
-  slug=$(slugify "$out")
-  [ -n "$slug" ] || return 1
-  branch_text=$(unique_branch "${branch_prefix}${slug}")
+  name=$(sanitize_conventional "$out") || return 1
+  branch_text=$(unique_branch "$name")
   cur_b=${#branch_text}
   return 0
 }
@@ -163,7 +163,7 @@ render_field() { # $1=label $2=text $3=cursor $4=style
 }
 
 draw_fields() {
-  local branch_style="$dim" branch_shown="$branch_text" col
+  local branch_style="$dim" branch_shown="$branch_text"
   [ "$focus" = "branch" ] && branch_style="$reset"
   if [ -z "$repo_root" ]; then
     branch_shown="(--here split, no worktree)"

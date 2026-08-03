@@ -5,9 +5,9 @@
 # Usage:
 #   spawn done [--list]
 #
-# Lists the current repository's worktrees whose branch carries the
-# configured prefix (branch_prefix), with their state: merged, empty,
-# uncommitted changes, commits ahead, live agent. Multi-select with fzf
+# Lists the current repository's worktrees whose branch was created by
+# spawn (tracked in the plugin state dir), with their state: merged,
+# empty, uncommitted changes, commits ahead, live agent. Multi-select with fzf
 # (tab), confirmation, then removal — including the herdr workspace when
 # one is open. --list prints the state without offering anything.
 #
@@ -37,6 +37,11 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
 worktrees=$("$herdr" worktree list --cwd "$PWD" --json 2>&1) \
   || { echo "spawn done: $worktrees" >&2; exit 1; }
 
+# Branches created by spawn (the registry written at launch time).
+branches_file="$(plugin_state_dir)/branches"
+[ -s "$branches_file" ] \
+  || { echo "spawn done: no spawn-created worktree tracked yet"; exit 0; }
+
 # Agents per workspace (to tag worktrees that are still inhabited).
 agents=$("$herdr" agent list 2>/dev/null || echo '{}')
 
@@ -44,7 +49,7 @@ agents=$("$herdr" agent list 2>/dev/null || echo '{}')
 rows=""
 while IFS=$'\t' read -r branch path ws_id; do
   [ -n "$branch" ] || continue
-  case "$branch" in "$branch_prefix"*) ;; *) continue ;; esac
+  grep -qxF "$branch" "$branches_file" || continue
 
   tags=""
   if [ -n "$ws_id" ]; then
@@ -68,7 +73,7 @@ while IFS=$'\t' read -r branch path ws_id; do
 done < <(jq -r '.result.worktrees[]? | [.branch // "", .path // "", .open_workspace_id // ""] | @tsv' <<<"$worktrees")
 
 if [ -z "$rows" ]; then
-  echo "spawn done: no ${branch_prefix}* worktree in this repository"
+  echo "spawn done: no spawn-created worktree in this repository"
   exit 0
 fi
 
@@ -99,16 +104,22 @@ printf 'Confirm? [y/N] '
 read -r answer
 case "$answer" in y|Y) ;; *) echo "cancelled"; exit 0 ;; esac
 
+forget_branch() {
+  grep -vxF "$1" "$branches_file" > "$branches_file.tmp" 2>/dev/null || true
+  mv "$branches_file.tmp" "$branches_file"
+}
+
 while IFS=$'\t' read -r ws_id branch path _; do
   [ -n "$branch" ] || continue
   if [ "$ws_id" != "∅" ]; then
     # herdr worktree remove leaves the git branch behind — delete it too.
     "$herdr" worktree remove --workspace "$ws_id" --force >/dev/null 2>&1 \
       && { git branch -D "$branch" >/dev/null 2>&1 || true; \
+           forget_branch "$branch"; \
            echo "removed: $branch (workspace $ws_id)"; continue; }
   fi
   git worktree remove --force "$path" 2>/dev/null || true
   git branch -D "$branch" >/dev/null 2>&1 \
-    && echo "removed: $branch" \
+    && { forget_branch "$branch"; echo "removed: $branch"; } \
     || echo "failed: $branch (remove it manually)" >&2
 done <<<"$selected"

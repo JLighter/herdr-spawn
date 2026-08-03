@@ -22,7 +22,8 @@ plugin_state_dir() {
 # shellcheck disable=SC2034  # the variables are used by the sourcing scripts
 load_config() {
   kind="claude"
-  branch_prefix="agent/"
+  branch_types="feat fix chore docs refactor test perf style ci build"
+  branch_type_default="feat"
   focus="false"
   here_direction="right"
   base=""
@@ -85,6 +86,47 @@ herdr_error_code() {
   jq -r '.error.code // empty' <<<"$1" 2>/dev/null || true
 }
 
+# Conventional-commit type guessed from the prompt's wording (FR/EN
+# keywords), used when no LLM names the branch.
+guess_type() {
+  local lower
+  lower=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "$lower" in
+    fix*|corrige*|répare*|repare*|debug*|*" bug"*|*crash*|*erreur*|*error*|*broken*|*"ne marche pas"*|*"doesn't work"*) printf 'fix' ;;
+    doc*|documente*|*readme*) printf 'docs' ;;
+    test*|*"add tests"*|*"ajoute des tests"*|*"écris des tests"*) printf 'test' ;;
+    refactor*|réorganise*|reorganise*|nettoie*|renomme*|rename*|*cleanup*|*"clean up"*) printf 'refactor' ;;
+    chore*|bump*|upgrade*|*"mets à jour"*|*"met à jour"*|*"update dep"*) printf 'chore' ;;
+    perf*|optimise*|optimize*|accélère*|accelere*|*"speed up"*) printf 'perf' ;;
+    *) printf '%s' "$branch_type_default" ;;
+  esac
+}
+
+# Basic conventional branch name: <type>/<slug>. A leading slug word that
+# just repeats the type keyword is dropped (fix/fix-login → fix/login).
+conventional_branch() {
+  local type slug
+  type=$(guess_type "$1")
+  slug=$(slugify "$1")
+  case "$slug" in
+    "$type"-?*) slug="${slug#"$type"-}" ;;
+  esac
+  printf '%s/%s' "$type" "${slug:-task}"
+}
+
+# Validate an LLM "type/slug" reply: known type, slugified slug.
+# Anything else fails so the caller falls back to conventional_branch.
+sanitize_conventional() {
+  local raw type slug
+  raw=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "$raw" in */*) ;; *) return 1 ;; esac
+  type=$(printf '%s' "${raw%%/*}" | sed -E 's/[^a-z]+//g')
+  case " $branch_types " in *" $type "*) ;; *) return 1 ;; esac
+  slug=$(slugify "${raw#*/}")
+  [ -n "$slug" ] || return 1
+  printf '%s/%s' "$type" "$slug"
+}
+
 # First free branch name: the bare name, then -2, -3, … on collision.
 unique_branch() {
   local name="$1" n=2
@@ -104,8 +146,9 @@ notify() {
 # ── LLM-assisted branch slugs (optional, see slug_command in config) ──
 
 # The instruction piped into slug_command, with the task prompt inline.
-slug_instruction() {
-  printf 'Reply with only a short kebab-case git branch name (3-5 lowercase ascii words, no prefix, no quotes, no explanations) describing this coding task:\n\n%s\n' "$1"
+branch_instruction() {
+  printf 'Reply with only a conventional git branch name of the form type/short-kebab-slug, where type is one of: %s. The slug is 2-5 lowercase ascii words. No quotes, no explanations. The coding task:\n\n%s\n' \
+    "$(printf '%s' "$branch_types" | tr ' ' ',')" "$1"
 }
 
 # Portable timeout (macOS has no coreutils timeout): run "$@" and kill it
@@ -115,7 +158,9 @@ run_with_timeout() {
   shift
   "$@" &
   pid=$!
-  ( sleep "$secs" && kill "$pid" 2>/dev/null ) &
+  # The watchdog must not inherit our stdout: a $(…) caller waits for
+  # every holder of the pipe, which would stretch fast runs to $secs.
+  ( sleep "$secs" && kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
   watchdog=$!
   wait "$pid" 2>/dev/null
   rc=$?
@@ -124,14 +169,14 @@ run_with_timeout() {
   return $rc
 }
 
-# Synchronous LLM slug: prompt in, slug out (empty on failure/timeout).
-# The reply's last non-empty line is slugified — reasoning models may
-# emit thinking noise first, and slugify sanitizes whatever comes back.
-smart_slug() {
+# Synchronous LLM branch name: prompt in, type/slug out (fails on
+# timeout or malformed reply). The reply's last non-empty line is used —
+# reasoning models may emit thinking noise first.
+smart_branch() {
   [ -n "$slug_command" ] || return 1
   local out
-  out=$(slug_instruction "$1" \
+  out=$(branch_instruction "$1" \
     | run_with_timeout "${2:-$slug_wait}" bash -c "$slug_command" 2>/dev/null) || true
   out=$(printf '%s\n' "$out" | awk 'NF {line=$0} END {print line}')
-  slugify "$out"
+  sanitize_conventional "$out"
 }

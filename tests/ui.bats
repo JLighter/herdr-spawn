@@ -47,7 +47,7 @@ setup() {
 }
 
 @test "ui: slug_command replaces the basic slug asynchronously" {
-  printf "slug_command='printf llm-made-name'\n" > "$HERDR_PLUGIN_CONFIG_DIR/config"
+  printf "slug_command='printf fix/llm-made-name'\n" > "$HERDR_PLUGIN_CONFIG_DIR/config"
   run expect "$BATS_TEST_DIRNAME/ui-driver.exp" llm-slug
   [ "$status" -eq 0 ]
 }

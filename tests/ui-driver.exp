@@ -14,7 +14,7 @@ switch $scenario {
     expect "prompt ❯"
     send "fix login"
     expect {
-      "agent/fix-login" { exit 0 }
+      "fix/login" { exit 0 }
       timeout { puts "FAIL: branch slug not updated live"; exit 1 }
     }
   }
@@ -30,7 +30,7 @@ switch $scenario {
       timeout { puts "FAIL: shift+enter did not submit cleanly"; exit 1 }
     }
     expect {
-      "DRY_RUN_BRANCH<agent/hello>" { exit 0 }
+      "DRY_RUN_BRANCH<feat/hello>" { exit 0 }
       timeout { puts "FAIL: branch not derived"; exit 1 }
     }
   }
@@ -60,7 +60,7 @@ switch $scenario {
   "edit-branch" {
     expect "prompt ❯"
     send "fix login"
-    expect "agent/fix-login"
+    expect "fix/login"
     send "\t"
     send "\x15"
     send "agent/custom-name\r"
@@ -74,9 +74,9 @@ switch $scenario {
     # LLM name replaces it after the typing pause (async job).
     expect "prompt ❯"
     send "fix login"
-    expect "agent/fix-login"
+    expect "fix/login"
     expect {
-      "agent/llm-made-name" { exit 0 }
+      "fix/llm-made-name" { exit 0 }
       timeout { puts "FAIL: LLM slug never landed"; exit 1 }
     }
   }
@@ -84,7 +84,7 @@ switch $scenario {
     # Once edited by hand, the branch stops following the prompt.
     expect "prompt ❯"
     send "fix login"
-    expect "agent/fix-login"
+    expect "fix/login"
     send "\t"
     send "\x15"
     send "agent/mine"
@@ -92,7 +92,7 @@ switch $scenario {
     send " quickly\r"
     expect {
       "DRY_RUN_BRANCH<agent/mine>" { exit 0 }
-      "DRY_RUN_BRANCH<agent/fix-login-quickly>" { puts "FAIL: manual branch overwritten"; exit 1 }
+      "DRY_RUN_BRANCH<fix/login-quickly>" { puts "FAIL: manual branch overwritten"; exit 1 }
       timeout { puts "FAIL: no dry-run output"; exit 1 }
     }
   }

@@ -70,26 +70,58 @@ setup() {
   [ "$output" = "agent/new-task" ]
 }
 
-# ── smart_slug ────────────────────────────────────────────────────────
+# ── conventional branch names ─────────────────────────────────────────
 
-@test "smart_slug: slugifies whatever slug_command answers" {
-  slug_command='printf "My Fancy Name!"'
-  slug_wait=3
-  run smart_slug "whatever task"
-  [ "$status" -eq 0 ]
-  [ "$output" = "my-fancy-name" ]
+@test "guess_type: fix wording maps to fix, unknown falls back to feat" {
+  branch_type_default=feat
+  [ "$(guess_type 'fix the login crash')" = "fix" ]
+  [ "$(guess_type 'corrige le bug de pagination')" = "fix" ]
+  [ "$(guess_type 'refactor the auth module')" = "refactor" ]
+  [ "$(guess_type 'add a csv export button')" = "feat" ]
 }
 
-@test "smart_slug: a hung slug_command times out to an empty slug" {
+@test "conventional_branch: type/slug, leading type keyword deduped" {
+  branch_type_default=feat
+  [ "$(conventional_branch 'fix login')" = "fix/login" ]
+  [ "$(conventional_branch 'add a csv export')" = "feat/add-a-csv-export" ]
+}
+
+@test "sanitize_conventional: valid LLM reply is cleaned" {
+  branch_types="feat fix chore docs refactor test perf style ci build"
+  run sanitize_conventional "Fix/Login Bug!"
+  [ "$status" -eq 0 ]
+  [ "$output" = "fix/login-bug" ]
+}
+
+@test "sanitize_conventional: unknown type or missing slash is rejected" {
+  branch_types="feat fix chore docs refactor test perf style ci build"
+  run sanitize_conventional "wip/something"
+  [ "$status" -ne 0 ]
+  run sanitize_conventional "no-slash-here"
+  [ "$status" -ne 0 ]
+}
+
+# ── smart_branch ──────────────────────────────────────────────────────
+
+@test "smart_branch: sanitizes a type/slug reply from slug_command" {
+  branch_types="feat fix chore docs refactor test perf style ci build"
+  slug_command='printf "fix/Login Bug"'
+  slug_wait=3
+  run smart_branch "whatever task"
+  [ "$status" -eq 0 ]
+  [ "$output" = "fix/login-bug" ]
+}
+
+@test "smart_branch: a hung slug_command times out and fails" {
   slug_command='sleep 10'
   slug_wait=1
-  run smart_slug "whatever task"
-  [ -z "$output" ]
+  run smart_branch "whatever task"
+  [ "$status" -ne 0 ]
 }
 
-@test "smart_slug: unset slug_command fails fast" {
+@test "smart_branch: unset slug_command fails fast" {
   slug_command=""
-  run smart_slug "whatever task"
+  run smart_branch "whatever task"
   [ "$status" -ne 0 ]
 }
 

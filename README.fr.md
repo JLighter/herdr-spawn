@@ -45,6 +45,10 @@ CLI optionnelle : lier `spawn.sh` dans le PATH, p. ex.
 **Popup** (`prefix+enter`) — affiche le projet et la branche du pane
 actif, lit le prompt, puis lance l'agent sans voler le focus :
 
+- les noms de branches suivent le **format conventional-commit**
+  `<type>/<slug>` (feat, fix, chore, docs, refactor…) — le type est
+  déduit de la formulation du prompt, ou choisi par le LLM avec
+  `slug_command`
 - la **ligne branche se met à jour en direct** pendant la frappe du prompt
 - `tab` saute sur la ligne branche pour éditer le nom soi-même (elle
   cesse de suivre le prompt dès qu'on y touche ; la vider la rend au
@@ -88,7 +92,7 @@ slug_warmup='curl -s http://localhost:11434/api/generate -d "{\"model\":\"gemma3
 
 `herdr plugin config-dir herdr-spawn` imprime le répertoire de config ;
 un fichier `config` commenté y est créé au premier lancement : `kind`
-(claude/opencode/…), `branch_prefix`, `focus`, `here_direction`, `base`,
+(claude/opencode/…), `branch_types`, `branch_type_default`, `focus`, `here_direction`, `base`,
 `history_size`. Les dimensions des popups se règlent dans
 `herdr-plugin.toml` (`[[panes]]`, `width`/`height`).
 
