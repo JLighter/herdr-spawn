@@ -7,6 +7,8 @@ directory); `--here` is the explicit opt-out.
 
 *Documentation en français : [README.fr.md](README.fr.md).*
 
+![herdr-spawn demo](demo/demo.gif)
+
 ## Installation
 
 ```bash

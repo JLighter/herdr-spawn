@@ -7,6 +7,8 @@ répertoire de travail) ; `--here` est l'opt-out explicite.
 
 *English documentation: [README.md](README.md).*
 
+![herdr-spawn demo](demo/demo.gif)
+
 ## Installation
 
 ```bash
