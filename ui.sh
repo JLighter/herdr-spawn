@@ -2,15 +2,16 @@
 #
 # herdr-spawn — popup interface (entrypoint "launcher").
 #
-# Two-field editor: the prompt line and the branch line are shown
-# together, and the branch slug is recomputed live while you type.
-#   enter — launch (from either field)
-#   tab   — jump to the branch line and edit the name yourself (it stops
-#           auto-updating once you type in it; empty = auto again)
-#   esc   — close when the prompt is empty; from the branch line, jump
-#           back to the prompt
-#   ↑/↓   — walk the persistent prompt history
-#   :h    — as the whole prompt + enter: pick a past prompt with fzf
+# The branch name lives in the header and refreshes live while you type
+# the prompt below it.
+#   enter  — launch (from either field)
+#   tab    — jump to the branch line and edit the name yourself (it stops
+#            auto-updating once you type in it; empty = auto again)
+#   ctrl+g — name the branch with slug_command (LLM), on demand
+#   esc    — close when the prompt is empty; from the branch line, jump
+#            back to the prompt
+#   ↑/↓    — walk the persistent prompt history
+#   :h     — as the whole prompt + enter: pick a past prompt with fzf
 # ctrl+c / ctrl+d cancel. On error the popup stays open.
 #
 # No readline here: keys are read raw so the branch line can refresh on
@@ -51,7 +52,7 @@ fail_hold() {
 }
 
 # Preload the slug model (fire-and-forget) so slug_command answers fast
-# by the time a job actually runs.
+# when ctrl+g asks for a name.
 [ -n "$slug_warmup" ] && ( bash -c "$slug_warmup" >/dev/null 2>&1 & )
 
 # ── Context: project of the pane that was active when the popup opened ──
@@ -77,10 +78,10 @@ hist_stash=""
 prompt_text=""
 branch_text=""
 branch_auto=1
-focus="prompt"      # prompt | branch
-cur_p=0             # cursor offset in the prompt field
-cur_b=0             # cursor offset in the branch field
-cursor_line=0       # which line the physical cursor sits on (0/1)
+focus="prompt"        # prompt | branch
+cur_p=0               # cursor offset in the prompt field
+cur_b=0               # cursor offset in the branch field
+cursor_on_branch=0    # is the physical cursor parked on the branch line?
 
 default_branch() {
   unique_branch "$(conventional_branch "$prompt_text")"
@@ -96,8 +97,7 @@ refresh_branch() {
   cur_b=${#branch_text}
 }
 
-# ── Optional LLM slug job (slug_command): runs in the background after
-# a short typing pause; the basic slug shows until it answers. ──────────
+# ── LLM naming job (slug_command), started on demand with ctrl+g ──────
 slug_job_pid=""
 slug_job_file=""
 slug_job_prompt=""
@@ -110,9 +110,7 @@ stop_slug_job() {
 }
 
 start_slug_job() {
-  [ -n "$slug_command" ] || return 0
-  [ "$branch_auto" -eq 1 ] && [ -n "$repo_root" ] && [ -n "$prompt_text" ] || return 0
-  [ "$prompt_text" = "$slug_job_prompt" ] && return 0
+  [ -n "$slug_command" ] && [ -n "$repo_root" ] && [ -n "$prompt_text" ] || return 0
   stop_slug_job
   slug_job_prompt="$prompt_text"
   slug_job_file=$(mktemp "${TMPDIR:-/tmp}/herdr-spawn-slug.XXXXXX")
@@ -137,6 +135,10 @@ poll_slug_job() {
 }
 
 # ── Rendering ─────────────────────────────────────────────────────────
+# Layout: the branch line belongs to the header, BRANCH_OFFSET rows above
+# the prompt line (help line and a blank line sit between them).
+BRANCH_OFFSET=3
+
 draw_header() {
   printf '\n  %s⚡ spawn%s %s· agent %s%s%s\n' "$bold" "$reset" "$dim" "$reset$accent" "$kind" "$reset"
   printf '  %s──────────────────────────────────────────%s\n' "$dim" "$reset"
@@ -146,7 +148,13 @@ draw_header() {
   else
     printf '  %sproject%s  %sno git repository — the agent will open as a --here split%s\n' "$dim" "$reset" "$red" "$reset"
   fi
-  printf '  %senter: launch · tab: edit branch · esc: close · ↑ history · :h fzf%s\n\n' "$dim" "$reset"
+  printf '\n'   # branch line, filled in by draw_fields
+  if [ -n "$slug_command" ]; then
+    printf '  %senter: launch · tab: branch · ctrl+g: ai name · esc: close · ↑ hist · :h fzf%s\n' "$dim" "$reset"
+  else
+    printf '  %senter: launch · tab: edit branch · esc: close · ↑ history · :h fzf%s\n' "$dim" "$reset"
+  fi
+  printf '\n'   # blank line; the cursor now sits on the prompt line
 }
 
 # One field line: label, text windowed around the cursor, and the
@@ -170,21 +178,22 @@ draw_fields() {
   elif [ -n "$slug_job_pid" ] && [ "$branch_auto" -eq 1 ]; then
     branch_shown="$branch_text ⋯"
   fi
-  # Anchor on the prompt line, redraw both, then place the cursor.
-  [ "$cursor_line" -eq 1 ] && printf '\e[A'
-  render_field "prompt" "$prompt_text" "$cur_p" "$reset"
-  local col_p=$RENDER_CURSOR_COL
-  printf '\n'
+  # Return to the prompt-line anchor, then paint both lines.
+  [ "$cursor_on_branch" -eq 1 ] && printf '\e[%dB' "$BRANCH_OFFSET"
+  printf '\e[%dA' "$BRANCH_OFFSET"
   render_field "branch" "$branch_shown" "$cur_b" "$branch_style"
   local col_b=$RENDER_CURSOR_COL
-  if [ "$focus" = "prompt" ]; then
-    printf '\e[A\r'
-    [ "$col_p" -gt 0 ] && printf '\e[%dC' "$col_p"
-    cursor_line=0
+  printf '\e[%dB' "$BRANCH_OFFSET"
+  render_field "prompt" "$prompt_text" "$cur_p" "$reset"
+  local col_p=$RENDER_CURSOR_COL
+  if [ "$focus" = "branch" ]; then
+    printf '\e[%dA\r' "$BRANCH_OFFSET"
+    [ "$col_b" -gt 0 ] && printf '\e[%dC' "$col_b"
+    cursor_on_branch=1
   else
     printf '\r'
-    [ "$col_b" -gt 0 ] && printf '\e[%dC' "$col_b"
-    cursor_line=1
+    [ "$col_p" -gt 0 ] && printf '\e[%dC' "$col_p"
+    cursor_on_branch=0
   fi
 }
 
@@ -304,25 +313,16 @@ pick_history_fzf() {
     < "$histfile" || true)
   clear
   draw_header
+  cursor_on_branch=0
   [ -n "$pick" ] && { prompt_text="$pick"; cur_p=${#prompt_text}; }
   refresh_branch
-  cursor_line=0
-  printf '\n'
-  printf '\e[A'
 }
 
-# ── Main loop ─────────────────────────────────────────────────────────
-draw_header
-printf '\n'      # reserve the branch line, anchor on the prompt line
-printf '\e[A'
-draw_fields
-
-# At launch time, give a running (or about-to-run) slug job a bounded
-# chance to land: the branch line keeps refreshing while we wait.
+# At launch time, give a ctrl+g job still in flight a bounded chance to
+# land: the branch line keeps refreshing while we wait.
 await_slug_job() {
-  [ -n "$slug_command" ] && [ "$branch_auto" -eq 1 ] && [ -n "$repo_root" ] || return 0
-  [ "${slug_wait:-3}" -gt 0 ] 2>/dev/null || return 0
-  start_slug_job
+  [ -n "$slug_job_pid" ] || return 0
+  [ "${slug_wait:-3}" -gt 0 ] 2>/dev/null || { stop_slug_job; return 0; }
   local deadline=$(( ${slug_wait:-3} * 4 )) i=0
   while [ -n "$slug_job_pid" ] && [ "$i" -lt "$deadline" ]; do
     if poll_slug_job; then draw_fields; return 0; fi
@@ -334,15 +334,15 @@ await_slug_job() {
   return 0
 }
 
-idle_ticks=0
+# ── Main loop ─────────────────────────────────────────────────────────
+draw_header
+draw_fields
+
 while read_key; do
   if [ "$KEY" = "TICK" ]; then
-    idle_ticks=$((idle_ticks + 1))
-    [ "$idle_ticks" -ge 2 ] && start_slug_job
     poll_slug_job && draw_fields
     continue
   fi
-  idle_ticks=0
   case "$KEY" in
     $'\r'|$'\n'|"CSI:27;2;13~"|"CSI:13;2u")
       if [ "$prompt_text" = ":h" ]; then
@@ -365,6 +365,13 @@ while read_key; do
     $'\t')
       if [ -n "$repo_root" ]; then
         if [ "$focus" = "prompt" ]; then focus="branch"; else leave_branch_field; fi
+      fi
+      ;;
+    $'\x07')
+      # ctrl+g: name the branch with slug_command, on demand.
+      if [ -n "$slug_command" ] && [ -n "$repo_root" ] && [ -n "$prompt_text" ]; then
+        branch_auto=1
+        start_slug_job
       fi
       ;;
     $'\x7f'|$'\x08') field_backspace ;;
@@ -391,8 +398,8 @@ while read_key; do
   fi
 done
 
-# Move below the branch line before printing anything else.
-[ "$cursor_line" -eq 0 ] && printf '\e[B'
+# Move below the prompt line before printing anything else.
+[ "$cursor_on_branch" -eq 1 ] && printf '\e[%dB' "$BRANCH_OFFSET"
 printf '\n'
 
 [ -n "$prompt_text" ] || exit 0

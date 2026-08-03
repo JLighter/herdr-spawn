@@ -49,10 +49,12 @@ actif, lit le prompt, puis lance l'agent sans voler le focus :
   `<type>/<slug>` (feat, fix, chore, docs, refactor…) — le type est
   déduit de la formulation du prompt, ou choisi par le LLM avec
   `slug_command`
-- la **ligne branche se met à jour en direct** pendant la frappe du prompt
+- le nom de branche vit **dans le header** et se met à jour en direct
+  pendant la frappe du prompt
 - `tab` saute sur la ligne branche pour éditer le nom soi-même (elle
   cesse de suivre le prompt dès qu'on y touche ; la vider la rend au
   générateur)
+- `ctrl+g` demande un nom à `slug_command` (LLM), **à la demande**
 - `entrée` lance (depuis l'un ou l'autre champ), prompt vide ou `esc`
   ferme, `ctrl+c`/`ctrl+d` annulent
 - `↑` parcourt l'historique persistant des prompts, `:h` y pioche avec fzf
@@ -78,9 +80,10 @@ l'état seulement.
 `slug_command` dans la config fait nommer les branches par un LLM
 (local) : la commande reçoit une instruction prête + le prompt de la
 tâche sur stdin et imprime un nom sur stdout (re-slugifié par sécurité).
-Dans le popup elle tourne en arrière-plan après une courte pause de
-frappe — le slug basique s'affiche en attendant ; au lancement le popup
-attend jusqu'à `slug_wait` secondes. `slug_warmup` précharge le modèle à
+Dans le popup elle tourne **à la demande** : `ctrl+g` lance la
+génération, le nom arrive en asynchrone (le slug basique reste affiché
+entre-temps) ; un lancement avec une génération en cours attend jusqu'à
+`slug_wait` secondes. `slug_warmup` précharge le modèle à
 l'ouverture du popup.
 
 ```sh

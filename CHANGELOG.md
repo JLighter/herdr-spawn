@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 — 2026-08-03
+
+- **LLM naming is on demand**: `ctrl+g` asks `slug_command` for a branch
+  name; nothing runs behind your back while typing anymore. A launch
+  with a job still in flight waits up to `slug_wait` seconds.
+- **The branch line moved into the header**, above the prompt, instead
+  of trailing it.
+
 ## 0.5.0 — 2026-08-03
 
 - **Conventional-commit branch names**: `<type>/<slug>` (feat, fix,

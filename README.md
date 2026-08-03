@@ -48,9 +48,11 @@ reads the prompt, then launches the agent without stealing focus:
 - branch names follow the **conventional-commit format** `<type>/<slug>`
   (feat, fix, chore, docs, refactor…) — the type is inferred from the
   prompt wording, or chosen by the LLM with `slug_command`
-- the **branch line updates live** while you type the prompt
+- the branch name sits **in the header** and updates live while you
+  type the prompt
 - `tab` jumps to the branch line to edit the name yourself (it stops
   auto-updating once you touch it; clear it to hand it back)
+- `ctrl+g` asks `slug_command` (LLM) for a name, **on demand**
 - `enter` launches (from either field), an empty prompt or `esc` closes,
   `ctrl+c`/`ctrl+d` cancel
 - `↑` walks the persistent prompt history, `:h` picks from it with fzf
@@ -77,9 +79,9 @@ only.
 Set `slug_command` in the config to name branches with a (local) LLM:
 the command receives a ready-made instruction + the task prompt on stdin
 and prints a name on stdout (slugified again for safety). In the popup
-it runs in the background after a short typing pause — the basic slug
-shows until it answers; at launch the popup waits up to `slug_wait`
-seconds. `slug_warmup` preloads the model when the popup opens.
+it runs **on demand**: press `ctrl+g` and the name lands asynchronously
+(the basic slug stays meanwhile); a launch with a job still in flight
+waits up to `slug_wait` seconds. `slug_warmup` preloads the model when the popup opens.
 
 ```sh
 slug_command='ollama run gemma3:4b'

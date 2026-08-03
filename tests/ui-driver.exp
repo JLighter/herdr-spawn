@@ -70,14 +70,15 @@ switch $scenario {
     }
   }
   "llm-slug" {
-    # With slug_command configured, the basic slug shows first and the
-    # LLM name replaces it after the typing pause (async job).
+    # slug_command runs on demand: the basic slug shows while typing and
+    # ctrl+g asks the LLM for a name (async job, collected by the ticks).
     expect "prompt ❯"
     send "fix login"
     expect "fix/login"
+    send "\x07"
     expect {
       "fix/llm-made-name" { exit 0 }
-      timeout { puts "FAIL: LLM slug never landed"; exit 1 }
+      timeout { puts "FAIL: LLM slug never landed after ctrl+g"; exit 1 }
     }
   }
   "manual-branch-sticks" {
