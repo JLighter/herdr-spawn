@@ -97,7 +97,8 @@ unique_branch() {
 # are ignored, the result is trimmed. Empty result → exit code 1.
 edit_prompt() {
   local tmp prompt
-  tmp=$(mktemp -t herdr-spawn-prompt) || return 1
+  # BSD and GNU mktemp disagree on -t; the explicit template works on both.
+  tmp=$(mktemp "${TMPDIR:-/tmp}/herdr-spawn-prompt.XXXXXX") || return 1
   {
     echo '# Agent prompt — lines starting with # are ignored.'
     echo '# Save and close to launch; leave empty to cancel.'

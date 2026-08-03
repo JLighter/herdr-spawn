@@ -46,7 +46,8 @@ kitty_pop() { printf '\e[<u'; }
 #                 line → close, text → hand the line back untouched
 ESC_MARK=$'\x01'
 NL_MARK='⏎'
-inputrc_tmp=$(mktemp -t herdr-spawn-inputrc)
+# BSD and GNU mktemp disagree on -t; the explicit template works on both.
+inputrc_tmp=$(mktemp "${TMPDIR:-/tmp}/herdr-spawn-inputrc.XXXXXX")
 {
   user_inputrc="${INPUTRC:-$HOME/.inputrc}"
   # shellcheck disable=SC2016  # $include is inputrc syntax, not shell
