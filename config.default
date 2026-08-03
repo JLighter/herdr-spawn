@@ -1,23 +1,23 @@
-# ── herdr-spawn : configuration ──────────────────────────────────────
-# Ce fichier est sourcé par bash : syntaxe clé=valeur, pas d'espaces
-# autour du =. Il vit dans le config dir du plugin
-# (`herdr plugin config-dir herdr-spawn`) et vous appartient.
+# ── herdr-spawn: configuration ───────────────────────────────────────
+# This file is sourced by bash: key=value syntax, no spaces around "=".
+# It lives in the plugin config dir (`herdr plugin config-dir herdr-spawn`)
+# and belongs to you.
 
-# Agent lancé par défaut (kinds supportés : `herdr agent start --help`).
+# Agent launched by default (supported kinds: `herdr agent start --help`).
 kind=claude
 
-# Préfixe des branches/worktrees créés.
+# Prefix for the branches/worktrees created.
 branch_prefix=agent/
 
-# Donner le focus au pane de l'agent après lancement (true/false).
-# false : la sidebar et les notifications suivent son état.
+# Give focus to the agent pane after launch (true/false).
+# false: the sidebar and notifications track its state.
 focus=false
 
-# Direction du split en mode --here (right/down).
+# Split direction in --here mode (right/down).
 here_direction=right
 
-# Ref de base des worktrees (vide = branche courante).
+# Base ref for worktrees (empty = current branch).
 base=
 
-# Nombre de prompts conservés dans l'historique (↑ dans le popup).
+# Number of prompts kept in history (↑ in the popup).
 history_size=200

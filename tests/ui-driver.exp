@@ -1,0 +1,68 @@
+#!/usr/bin/expect -f
+# Drives ui.sh in a pty (SPAWN_UI_DRY_RUN=1 — nothing is launched).
+# Usage: ui-driver.exp <multiline|esc-empty|esc-keeps-text|edit-branch>
+
+set timeout 8
+set scenario [lindex $argv 0]
+set uidir [file dirname [file normalize [info script]]]
+
+spawn bash [file join $uidir .. ui.sh]
+
+switch $scenario {
+  "multiline" {
+    expect "prompt ❯"
+    send "hello"
+    send "\x1b\[13;2u"
+    send "world\r"
+    expect "branch ❯"
+    send "\r"
+    expect {
+      -re {DRY_RUN_PROMPT<hello\r?\nworld>} {}
+      timeout { puts "FAIL: multi-line prompt not built"; exit 1 }
+    }
+    expect {
+      "DRY_RUN_BRANCH<agent/hello-world>" { exit 0 }
+      timeout { puts "FAIL: default branch not derived"; exit 1 }
+    }
+  }
+  "esc-empty" {
+    expect "prompt ❯"
+    send "\x1b\[27u"
+    expect {
+      "DRY_RUN_PROMPT" { puts "FAIL: launched instead of closing"; exit 1 }
+      eof {}
+    }
+    catch wait result
+    exit [lindex $result 3]
+  }
+  "esc-keeps-text" {
+    expect "prompt ❯"
+    send "abc"
+    send "\x1b\[27u"
+    # The line is handed back untouched; accept it this time.
+    expect "prompt ❯"
+    send "\r"
+    expect "branch ❯"
+    send "\r"
+    expect {
+      "DRY_RUN_PROMPT<abc>" { exit 0 }
+      timeout { puts "FAIL: text lost after esc"; exit 1 }
+    }
+  }
+  "edit-branch" {
+    expect "prompt ❯"
+    send "fix login\r"
+    expect "branch ❯"
+    # Wipe the prefilled name and type a custom one.
+    send "\x15"
+    send "agent/custom-name\r"
+    expect {
+      "DRY_RUN_BRANCH<agent/custom-name>" { exit 0 }
+      timeout { puts "FAIL: branch not editable"; exit 1 }
+    }
+  }
+  default {
+    puts "unknown scenario: $scenario"
+    exit 2
+  }
+}

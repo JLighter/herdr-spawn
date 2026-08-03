@@ -1,9 +1,11 @@
 # herdr-spawn
 
-Lancer un agent de code avec un prompt, depuis un popup
-[herdr](https://herdr.dev) ou en CLI. Par défaut, chaque agent reçoit son
-propre worktree git + workspace herdr (un agent par branche, isolé du
-répertoire de travail) ; `--here` est l'opt-out explicite.
+Launch a coding agent with a prompt, from a [herdr](https://herdr.dev)
+popup or the CLI. By default every agent gets its own git worktree +
+herdr workspace (one agent per branch, isolated from your working
+directory); `--here` is the explicit opt-out.
+
+*Documentation en français : [README.fr.md](README.fr.md).*
 
 ## Installation
 
@@ -11,54 +13,96 @@ répertoire de travail) ; `--here` est l'opt-out explicite.
 herdr plugin install JLighter/herdr-spawn
 ```
 
-Ou pour développer en local :
+Or for local development:
 
 ```bash
 git clone https://github.com/JLighter/herdr-spawn
 herdr plugin link ./herdr-spawn
 ```
 
-Binding du popup dans `~/.config/herdr/config.toml` :
+Bind the popups in `~/.config/herdr/config.toml`:
 
 ```toml
 [[keys.command]]
 key = "prefix+enter"
 type = "plugin_action"
 command = "herdr-spawn.open"
-description = "lancer un agent (worktree + prompt)"
+description = "launch an agent (worktree + prompt)"
+
+# optional: the reaper (spawn done)
+[[keys.command]]
+key = "prefix+shift+e"
+type = "plugin_action"
+command = "herdr-spawn.done"
+description = "clean up agent worktrees"
 ```
 
-CLI optionnelle : ajouter un lien vers `spawn.sh` dans le PATH, p. ex.
+Optional CLI: link `spawn.sh` into your PATH, e.g.
 `ln -s /path/to/herdr-spawn/spawn.sh ~/.local/bin/spawn`.
 
 ## Usage
 
-- **Popup** (`prefix+enter`) : affiche le projet et la branche du pane
-  actif, lit le prompt (↑ = historique), lance l'agent sans voler le
-  focus. Ligne vide, ctrl+c ou ctrl+d annule. Hors dépôt git, l'agent
-  s'ouvre en split `--here` au lieu d'un worktree.
-- **CLI** : `spawn "corrige le bug X"` — options `-H/--here`, `-k kind`,
-  `-b branche`, `-f/--focus` (voir `spawn --help`).
+**Popup** (`prefix+enter`) — shows the active pane's project and branch,
+reads the prompt, then launches the agent without stealing focus:
+
+- `enter` launches, an empty line or `esc` closes, `ctrl+c`/`ctrl+d` cancel
+- `shift+enter` inserts a new line (multi-line prompts; relies on the
+  kitty keyboard protocol, which herdr panes speak — otherwise it
+  degrades to a plain enter)
+- `↑` walks the persistent prompt history, `:h` picks from it with fzf
+- the generated branch name is prefilled and **editable** before launch;
+  leave it empty to regenerate the default
+- outside a git repository the agent opens as a `--here` split instead
+  of a worktree
+
+**CLI**:
+
+```bash
+spawn "fix the pagination bug"        # worktree + workspace + agent
+spawn -e                              # write the prompt in $EDITOR
+spawn -H "quick question"             # split in the current workspace
+spawn -k opencode -b agent/my-task "…"
+spawn done                            # list/clean up agent worktrees
+```
+
+**Reaper** (`spawn done`, or the `herdr-spawn.done` action) — lists the
+repository's agent worktrees with their state (`[merged]`, `[empty]`,
+`[changes]`, `[+N commits]`, `[agent working]`…), fzf multi-select,
+confirmation, then removes worktree + branch. `--list` prints the state
+only.
 
 ## Configuration
 
-`herdr plugin config-dir herdr-spawn` imprime le répertoire de config ;
-le fichier `config` y est créé au premier lancement (copie commentée de
-`config.default`) : `kind`, `branch_prefix`, `focus`, `here_direction`,
-`base`, `history_size`. Les dimensions du popup se règlent dans
-`herdr-plugin.toml` (`[[panes]]`, `width`/`height`).
+`herdr plugin config-dir herdr-spawn` prints the config directory; a
+commented `config` file is seeded there on first launch: `kind`
+(claude/opencode/…), `branch_prefix`, `focus`, `here_direction`, `base`,
+`history_size`. Popup dimensions live in `herdr-plugin.toml`
+(`[[panes]]`, `width`/`height`).
 
-L'historique des prompts vit dans le state dir du plugin
+Prompt history lives in the plugin state dir
 (`~/.local/state/herdr/plugins/herdr-spawn/history`).
 
-## Notes de robustesse
+## Robustness notes
 
-- `agent start` est réessayé tant que le shell du nouveau pane démarre
+- If the launch fails before the agent has started, the created worktree
+  or split is rolled back — no orphaned resources. A started agent is
+  never destroyed.
+- `agent start` is retried while the new pane's shell boots
   (`agent_pane_busy`).
-- `agent prompt` utilise `--wait` : une soumission perdue au démarrage
-  (`agent_prompt_stalled`) est réessayée ; `--until working` rend la main
-  dès que l'agent commence son turn.
+- `agent prompt` uses `--wait`: a submission lost at startup
+  (`agent_prompt_stalled`) is retried; `--until working` returns as soon
+  as the agent begins its turn.
+- Branch slugs are locale-independent (python3/unicodedata, iconv
+  fallback) and collide gracefully (`-2`, `-3`, …).
 
-## Requis
+## Requirements
 
-herdr ≥ 0.7, `jq`, git. macOS/Linux.
+herdr ≥ 0.7, `jq`, git. python3 recommended (accent-safe slugs), fzf
+optional (history picker, reaper selection). macOS/Linux.
+
+## Development
+
+```bash
+bats tests/        # unit + pty integration tests (needs expect)
+shellcheck -x *.sh
+```
