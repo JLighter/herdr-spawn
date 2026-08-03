@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 — 2026-08-03
+
+- **Multi-line input removed** (popup `shift+enter` and CLI `--edit`):
+  one task, one prompt line. `shift+enter` now submits like a plain
+  enter — herdr's encoded sequence is swallowed instead of leaking into
+  the line.
+
 ## 0.2.1 — 2026-08-03
 
 - Fix `shift+enter` in the popup: bind herdr's default modifyOtherKeys

@@ -8,7 +8,6 @@
 #
 # Usage:
 #   spawn [options] "prompt…"
-#   spawn -e | --edit            write the prompt in $EDITOR (multi-line)
 #   spawn done                   list/clean up agent worktrees
 #
 #   -H, --here          no worktree: split in the current workspace
@@ -41,7 +40,6 @@ if [ "${1:-}" = "done" ]; then
 fi
 
 here=0
-edit=0
 focus_flag=""
 branch=""
 
@@ -51,7 +49,6 @@ while [ $# -gt 0 ]; do
     -k|--kind)   kind="${2:?spawn: --kind requires a value}"; shift 2 ;;
     -b|--branch) branch="${2:?spawn: --branch requires a value}"; shift 2 ;;
     -f|--focus)  focus_flag="--focus"; shift ;;
-    -e|--edit)   edit=1; shift ;;
     -h|--help)   awk 'NR>1 && !/^#/{exit} NR>1{sub(/^# ?/,""); print}' "$0"; exit 0 ;;
     --)          shift; break ;;
     -*)          echo "spawn: unknown option: $1 (see spawn --help)" >&2; exit 2 ;;
@@ -60,11 +57,7 @@ while [ $# -gt 0 ]; do
 done
 
 prompt="${*:-}"
-if [ -z "$prompt" ] && [ "$edit" -eq 1 ]; then
-  [ -t 0 ] || { echo "spawn: --edit requires a terminal" >&2; exit 2; }
-  prompt=$(edit_prompt) || { echo "spawn: cancelled (empty prompt)" >&2; exit 0; }
-fi
-[ -n "$prompt" ] || { echo 'usage: spawn [-H] [-e] [-k kind] [-b branch] "prompt"' >&2; exit 2; }
+[ -n "$prompt" ] || { echo 'usage: spawn [-H] [-k kind] [-b branch] "prompt"' >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { echo "spawn: jq is required" >&2; exit 1; }
 
 if [ -z "$focus_flag" ]; then

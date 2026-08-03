@@ -4,9 +4,6 @@
 #
 # Shows the context (project, branch, agent), reads the prompt with
 # history (↑/↓), then delegates to spawn.sh.
-#   shift+enter — insert a new line (multi-line prompt; needs the kitty
-#                 keyboard protocol, which herdr panes speak — otherwise
-#                 it falls back to a plain enter)
 #   :h          — pick a past prompt with fzf
 #   esc         — close the popup when the line is empty; with text, the
 #                 line is kept as-is
@@ -37,23 +34,22 @@ kitty_pop() { printf '\e[<u'; }
 
 # readline macros, loaded via a dedicated INPUTRC (user's inputrc is
 # included first so their settings survive):
-#   shift+enter → insert the ⏎ marker, turned into a real newline at
-#                 submission. herdr encodes it as CSI 27;2;13~ (xterm
-#                 modifyOtherKeys, its default) or CSI 13;2u (kitty,
-#                 when the pane requested it) — bind both.
+#   shift+enter → behaves like a plain enter. herdr encodes it as
+#                 CSI 27;2;13~ (xterm modifyOtherKeys, its default) or
+#                 CSI 13;2u (kitty) — without these binds readline would
+#                 leak the tail of the unknown sequence into the line.
 #   esc (CSI 27u / 27;1u, or a bare \e) → prefix the line with a \x01
 #                 marker and accept it; the loop below decides: empty
 #                 line → close, text → hand the line back untouched
 ESC_MARK=$'\x01'
-NL_MARK='⏎'
 # BSD and GNU mktemp disagree on -t; the explicit template works on both.
 inputrc_tmp=$(mktemp "${TMPDIR:-/tmp}/herdr-spawn-inputrc.XXXXXX")
 {
   user_inputrc="${INPUTRC:-$HOME/.inputrc}"
   # shellcheck disable=SC2016  # $include is inputrc syntax, not shell
   [ -f "$user_inputrc" ] && printf '$include %s\n' "$user_inputrc"
-  printf '"\\e[27;2;13~": "%s"\n' "$NL_MARK"
-  printf '"\\e[13;2u": "%s"\n' "$NL_MARK"
+  printf '"\\e[27;2;13~": accept-line\n'
+  printf '"\\e[13;2u": accept-line\n'
   printf '"\\e[27u": "\\C-a\\C-v\\C-a\\n"\n'
   printf '"\\e[27;1u": "\\C-a\\C-v\\C-a\\n"\n'
   printf '"\\e": "\\C-a\\C-v\\C-a\\n"\n'
@@ -87,7 +83,7 @@ if [ -n "$repo_root" ]; then
 else
   printf '  %sproject%s  %sno git repository — the agent will open as a --here split%s\n' "$dim" "$reset" "$red" "$reset"
 fi
-printf '  %senter: launch · shift+enter: new line · esc: close · ↑ history · :h fzf%s\n\n' "$dim" "$reset"
+printf '  %senter: launch · esc: close · ↑ history · :h fzf%s\n\n' "$dim" "$reset"
 
 # Persistent prompt history (plugin state dir).
 state=$(plugin_state_dir)
@@ -128,9 +124,6 @@ done
 history -s "$prompt"
 history -w "$histfile"
 tail -n "${history_size:-200}" "$histfile" > "$histfile.tmp" && mv "$histfile.tmp" "$histfile"
-
-# Turn shift+enter markers into real newlines.
-prompt="${prompt//"$NL_MARK"/$'\n'}"
 
 # Branch step (worktree mode only): the generated name, prefilled and
 # editable. Enter accepts, empty regenerates the default, esc goes back

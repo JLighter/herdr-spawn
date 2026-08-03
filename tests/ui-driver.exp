@@ -1,6 +1,6 @@
 #!/usr/bin/expect -f
 # Drives ui.sh in a pty (SPAWN_UI_DRY_RUN=1 — nothing is launched).
-# Usage: ui-driver.exp <multiline|esc-empty|esc-keeps-text|edit-branch>
+# Usage: ui-driver.exp <shift-enter-is-enter|esc-empty|esc-keeps-text|edit-branch>
 
 set timeout 8
 set scenario [lindex $argv 0]
@@ -9,33 +9,18 @@ set uidir [file dirname [file normalize [info script]]]
 spawn bash [file join $uidir .. ui.sh]
 
 switch $scenario {
-  "multiline" {
-    expect "prompt ❯"
-    send "hello"
-    send "\x1b\[13;2u"
-    send "world\r"
-    expect "branch ❯"
-    send "\r"
-    expect {
-      -re {DRY_RUN_PROMPT<hello\r?\nworld>} {}
-      timeout { puts "FAIL: multi-line prompt not built"; exit 1 }
-    }
-    expect {
-      "DRY_RUN_BRANCH<agent/hello-world>" { exit 0 }
-      timeout { puts "FAIL: default branch not derived"; exit 1 }
-    }
-  }
-  "multiline-modifyotherkeys" {
-    # herdr's default shift+enter encoding (xterm modifyOtherKeys).
+  "shift-enter-is-enter" {
+    # herdr encodes shift+enter as CSI 27;2;13~ (modifyOtherKeys, its
+    # default) or CSI 13;2u (kitty). Both must submit like a plain enter
+    # instead of leaking the sequence tail into the line.
     expect "prompt ❯"
     send "hello"
     send "\x1b\[27;2;13~"
-    send "world\r"
     expect "branch ❯"
     send "\r"
     expect {
-      -re {DRY_RUN_PROMPT<hello\r?\nworld>} { exit 0 }
-      timeout { puts "FAIL: modifyOtherKeys shift+enter not handled"; exit 1 }
+      "DRY_RUN_PROMPT<hello>" { exit 0 }
+      timeout { puts "FAIL: shift+enter did not submit cleanly"; exit 1 }
     }
   }
   "esc-empty" {

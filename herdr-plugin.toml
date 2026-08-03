@@ -1,13 +1,12 @@
 id = "herdr-spawn"
 name = "Spawn"
-version = "0.2.1"
+version = "0.3.0"
 min_herdr_version = "0.7.0"
 description = "Launch an agent with a prompt — dedicated worktree + workspace by default"
 platforms = ["linux", "macos"]
 
-# The launch popup: reads the prompt (history, shift+enter for multi-line,
-# :h fzf picker), creates worktree + workspace, starts the agent, submits
-# the prompt.
+# The launch popup: reads the prompt (history, :h fzf picker), creates
+# worktree + workspace, starts the agent, submits the prompt.
 [[panes]]
 id = "launcher"
 title = "Launch an agent"

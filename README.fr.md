@@ -46,9 +46,6 @@ CLI optionnelle : lier `spawn.sh` dans le PATH, p. ex.
 actif, lit le prompt, puis lance l'agent sans voler le focus :
 
 - `entrée` lance, ligne vide ou `esc` ferme, `ctrl+c`/`ctrl+d` annulent
-- `shift+entrée` insère un saut de ligne (prompts multi-lignes ; repose
-  sur le protocole clavier kitty, que les panes herdr parlent — sinon
-  dégradation en entrée simple)
 - `↑` parcourt l'historique persistant des prompts, `:h` y pioche avec fzf
 - le nom de branche généré est pré-rempli et **éditable** avant le
   lancement ; vide = défaut régénéré
@@ -58,7 +55,6 @@ actif, lit le prompt, puis lance l'agent sans voler le focus :
 
 ```bash
 spawn "corrige le bug de pagination"  # worktree + workspace + agent
-spawn -e                              # écrire le prompt dans $EDITOR
 spawn -H "question rapide"            # split dans le workspace courant
 spawn -k opencode -b agent/ma-tache "…"
 spawn done                            # lister/nettoyer les worktrees

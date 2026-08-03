@@ -93,28 +93,6 @@ unique_branch() {
   printf '%s-%s' "$name" "$n"
 }
 
-# Multi-line prompt in $EDITOR (git-commit pattern): lines starting with #
-# are ignored, the result is trimmed. Empty result → exit code 1.
-edit_prompt() {
-  local tmp prompt
-  # BSD and GNU mktemp disagree on -t; the explicit template works on both.
-  tmp=$(mktemp "${TMPDIR:-/tmp}/herdr-spawn-prompt.XXXXXX") || return 1
-  {
-    echo '# Agent prompt — lines starting with # are ignored.'
-    echo '# Save and close to launch; leave empty to cancel.'
-  } > "$tmp"
-  if ! "${EDITOR:-vi}" "$tmp"; then
-    rm -f "$tmp"
-    return 1
-  fi
-  prompt=$(grep -v '^#' "$tmp" | awk 'NF {p=1} p' | sed -e 's/[[:space:]]*$//')
-  rm -f "$tmp"
-  # Drop trailing blank lines.
-  prompt=$(printf '%s' "$prompt" | sed -e ':a' -e '/^[[:space:]]*$/{$d;N;ba' -e '}')
-  [ -n "$prompt" ] || return 1
-  printf '%s' "$prompt"
-}
-
 # herdr toast (best effort — silent when unavailable).
 notify() {
   "${HERDR_BIN_PATH:-herdr}" notification show "$1" --body "${2:-}" --sound none >/dev/null 2>&1 || true

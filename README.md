@@ -46,9 +46,6 @@ Optional CLI: link `spawn.sh` into your PATH, e.g.
 reads the prompt, then launches the agent without stealing focus:
 
 - `enter` launches, an empty line or `esc` closes, `ctrl+c`/`ctrl+d` cancel
-- `shift+enter` inserts a new line (multi-line prompts; relies on the
-  kitty keyboard protocol, which herdr panes speak — otherwise it
-  degrades to a plain enter)
 - `↑` walks the persistent prompt history, `:h` picks from it with fzf
 - the generated branch name is prefilled and **editable** before launch;
   leave it empty to regenerate the default
@@ -59,7 +56,6 @@ reads the prompt, then launches the agent without stealing focus:
 
 ```bash
 spawn "fix the pagination bug"        # worktree + workspace + agent
-spawn -e                              # write the prompt in $EDITOR
 spawn -H "quick question"             # split in the current workspace
 spawn -k opencode -b agent/my-task "…"
 spawn done                            # list/clean up agent worktrees

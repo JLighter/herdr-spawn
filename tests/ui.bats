@@ -16,13 +16,8 @@ setup() {
   cd "$repo"
 }
 
-@test "ui: shift+enter builds a multi-line prompt, branch derived from slug" {
-  run expect "$BATS_TEST_DIRNAME/ui-driver.exp" multiline
-  [ "$status" -eq 0 ]
-}
-
-@test "ui: shift+enter also works in herdr's default modifyOtherKeys encoding" {
-  run expect "$BATS_TEST_DIRNAME/ui-driver.exp" multiline-modifyotherkeys
+@test "ui: shift+enter submits like a plain enter (herdr's encoding is swallowed)" {
+  run expect "$BATS_TEST_DIRNAME/ui-driver.exp" shift-enter-is-enter
   [ "$status" -eq 0 ]
 }
 

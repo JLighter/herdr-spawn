@@ -81,19 +81,3 @@ setup() {
   [ "$output" = "agent/task-3" ]
 }
 
-# ── edit_prompt ───────────────────────────────────────────────────────
-
-@test "edit_prompt: strips comments and edge blank lines" {
-  EDITOR="$BATS_TEST_DIRNAME/fake-editor.sh"
-  export EDITOR FAKE_EDITOR_CONTENT=$'\n# kept? no\ndo X\n\nthen Y\n\n'
-  run edit_prompt
-  [ "$status" -eq 0 ]
-  [ "$output" = $'do X\n\nthen Y' ]
-}
-
-@test "edit_prompt: empty content cancels (exit 1)" {
-  EDITOR="$BATS_TEST_DIRNAME/fake-editor.sh"
-  export EDITOR FAKE_EDITOR_CONTENT='# nothing but comments'
-  run edit_prompt
-  [ "$status" -eq 1 ]
-}

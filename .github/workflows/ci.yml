@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck -x *.sh tests/fake-editor.sh
+        run: shellcheck -x *.sh
 
   tests:
     runs-on: ubuntu-latest
